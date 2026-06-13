@@ -34,6 +34,16 @@ Install Ward:
 npm install -g ward
 ```
 
+Or run from source:
+
+```sh
+git clone <repo-url> ward
+cd ward
+npm install
+npm run build
+npm link
+```
+
 **Using an agent?** Run `ward skills add` to register Ward with your agent, then ask it to explore the codebase and capture findings. View everything in the web UI when it's done:
 
 ```sh
