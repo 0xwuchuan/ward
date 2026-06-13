@@ -81,6 +81,41 @@ def test_cli_place_and_finding_create_write_without_service(tmp_path, monkeypatc
     assert findings[0]["file_refs"] == [{"path": "src/Vault.sol", "start_line": 42, "end_line": 51}]
 
 
+def test_cli_start_launches_backend_and_app(monkeypatch):
+    captured = []
+
+    def fake_start_commands(commands):
+        captured.extend(commands)
+        return 0
+
+    monkeypatch.setattr("ward.cli._start_commands", fake_start_commands)
+    runner = CliRunner()
+
+    result = runner.invoke(cli_app, ["start"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert [command.label for command in captured] == ["backend", "app"]
+    assert captured[0].command[-4:] == ["--host", "127.0.0.1", "--port", "8765"]
+    assert captured[1].command == ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"]
+
+
+def test_cli_start_debug_also_launches_agentation_mcp(monkeypatch):
+    captured = []
+
+    def fake_start_commands(commands):
+        captured.extend(commands)
+        return 0
+
+    monkeypatch.setattr("ward.cli._start_commands", fake_start_commands)
+    runner = CliRunner()
+
+    result = runner.invoke(cli_app, ["start", "--debug"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert [command.label for command in captured] == ["backend", "app", "agentation mcp"]
+    assert captured[2].command == ["npm", "run", "agentation:mcp"]
+
+
 def test_api_uses_shared_database_layer(tmp_path, monkeypatch):
     monkeypatch.setenv("WARD_DB_PATH", str(tmp_path / "ward.db"))
     project = db.register_project(tmp_path / "repo", name="API Project")

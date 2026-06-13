@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 from typing import Annotated
 
 import typer
@@ -12,6 +17,65 @@ from .git import get_git_metadata
 app = typer.Typer(help="Ward local audit findings workspace.", no_args_is_help=True)
 finding_app = typer.Typer(help="Manage findings.", no_args_is_help=True)
 app.add_typer(finding_app, name="finding")
+
+
+@dataclass(frozen=True)
+class ManagedCommand:
+    label: str
+    command: Sequence[str]
+    cwd: Path | None = None
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _frontend_dir() -> Path:
+    return _project_root() / "frontend"
+
+
+def _display_command(command: Sequence[str]) -> str:
+    return " ".join(command)
+
+
+def _terminate_processes(processes: list[tuple[str, subprocess.Popen]]) -> None:
+    for _, process in processes:
+        if process.poll() is None:
+            process.terminate()
+
+    for _, process in processes:
+        if process.poll() is not None:
+            continue
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+
+def _start_commands(commands: list[ManagedCommand]) -> int:
+    processes: list[tuple[str, subprocess.Popen]] = []
+
+    try:
+        for managed in commands:
+            typer.echo(f"[ward] starting {managed.label}: {_display_command(managed.command)}")
+            process = subprocess.Popen(managed.command, cwd=managed.cwd)
+            processes.append((managed.label, process))
+
+        while True:
+            for label, process in processes:
+                return_code = process.poll()
+                if return_code is not None:
+                    typer.echo(f"[ward] {label} exited with code {return_code}; stopping remaining servers.")
+                    _terminate_processes(processes)
+                    return return_code
+            time.sleep(0.25)
+    except KeyboardInterrupt:
+        typer.echo("[ward] stopping servers.")
+        _terminate_processes(processes)
+        return 130
+    except FileNotFoundError as exc:
+        _terminate_processes(processes)
+        raise typer.ClickException(f"Unable to start server command: {exc}") from exc
 
 
 @app.command()
@@ -67,6 +131,46 @@ def create_finding(
         raise typer.BadParameter(str(exc)) from exc
 
     typer.echo(f"Created finding {finding['id']}")
+
+
+@app.command()
+def start(
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Also start the Agentation MCP server for UI annotation feedback."),
+    ] = False,
+) -> None:
+    """Start the Ward backend and Vite app together."""
+    frontend = _frontend_dir()
+    if not frontend.exists():
+        raise typer.ClickException(f"Frontend directory was not found: {frontend}")
+
+    commands = [
+        ManagedCommand(
+            label="backend",
+            command=[sys.executable, "-m", "uvicorn", "ward.api:app", "--host", "127.0.0.1", "--port", "8765"],
+        ),
+        ManagedCommand(
+            label="app",
+            command=["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"],
+            cwd=frontend,
+        ),
+    ]
+    if debug:
+        commands.append(
+            ManagedCommand(
+                label="agentation mcp",
+                command=["npm", "run", "agentation:mcp"],
+                cwd=frontend,
+            )
+        )
+
+    typer.echo("[ward] app: http://127.0.0.1:5173")
+    typer.echo("[ward] backend: http://127.0.0.1:8765")
+    if debug:
+        typer.echo("[ward] agentation mcp: http://localhost:4747")
+
+    raise typer.Exit(_start_commands(commands))
 
 
 @app.command()
