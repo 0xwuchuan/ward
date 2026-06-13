@@ -7,6 +7,7 @@
 - Preserve Ward's local-first behavior; do not add external services or storage unless explicitly requested.
 - Keep changes scoped to the requested behavior and follow existing project patterns.
 - All secrets must come from env vars or a secret manager; never hardcode secrets.
+- README.md is for users, not developers.
 
 ## Code Conventions
 
@@ -21,6 +22,16 @@
 - Use Tailwind utilities and the `cn()` helper for conditional class names.
 - Use Node `path`/`fs` APIs through small helpers where path behavior is shared.
 - Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
+
+## Local Development
+
+Run the backend and Vite app together:
+
+```sh
+npm run dev -- start
+```
+
+The app opens at `http://127.0.0.1:5173`, with the backend on `http://127.0.0.1:8765`.
 
 ## Testing Expectations
 

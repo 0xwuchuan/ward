@@ -17,6 +17,7 @@
   },
   "files": [
     "dist/**/*",
+    "docs/assets/**/*",
     "frontend/dist/**/*",
     "README.md",
     "LICENSE"
