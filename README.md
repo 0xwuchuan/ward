@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/ward.png" alt="Ward - Mission Control for Security Researchers" width="900">
+  <img src="https://raw.githubusercontent.com/0xwuchuan/ward/main/docs/assets/ward.png" alt="Ward - Mission Control for Security Researchers" width="900">
 </p>
 
 <p align="center">

@@ -1,6 +1,6 @@
 {
-  "name": "ward",
-  "version": "0.1.0",
+  "name": "@0xwuchuan/ward",
+  "version": "0.1.1",
   "type": "module",
   "bin": {
     "ward": "./dist/cli.js"
