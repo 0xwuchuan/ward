@@ -161,24 +161,9 @@ function StatusBadge({ status, className }: { status: Status; className?: string
   );
 }
 
-function WardMark() {
+function WardLogo() {
   return (
-    <svg viewBox="0 0 48 48" role="img" aria-label="Ward" className="group/wardmark h-8 w-8 overflow-visible">
-      <g stroke="currentColor" strokeLinejoin="round" strokeWidth="2.25">
-        <path fill="#3aa99f" d="M19 7h10l5 6-7 7h-6l-7-7 5-6Z" />
-        <path
-          className="origin-center transition-transform duration-200 ease-out group-hover/wardmark:-translate-x-0.5 group-hover/wardmark:-translate-y-0.5"
-          fill="#f4c542"
-          d="M5 16h15l-5 9-9 1-6-8 5-2Z"
-        />
-        <path
-          className="origin-center transition-transform duration-200 ease-out group-hover/wardmark:translate-x-0.5 group-hover/wardmark:-translate-y-0.5"
-          fill="#f4c542"
-          d="M43 16H28l5 9 9 1 6-8-5-2Z"
-        />
-        <path fill="#2f2419" d="M20 23h8l5 19-9 5-9-5 5-19Z" />
-      </g>
-    </svg>
+    <img src="/ward-logo.svg" alt="ward" className="h-8 w-8" draggable={false} />
   );
 }
 
@@ -702,17 +687,21 @@ export function App() {
   }
 
   const drawerTitle = drawerMode === "create" ? "New finding" : activeFinding?.title ?? "Finding";
-  const pageTitle = workspaceView === "projects" ? "Ward - Mission Control for Security Researchers" : selectedProject?.name ?? "Findings";
+  const pageTitle = workspaceView === "projects" ? "ward - projects" : `ward - ${selectedProject?.name ?? "findings"}`;
   const severityFilterLabel = filters.severity || "All severities";
   const statusFilterLabel = filters.status || "All statuses";
   const sourceFilterLabel = filters.source || "All sources";
+
+  useEffect(() => {
+    document.title = pageTitle;
+  }, [pageTitle]);
 
   return (
     <div className="flex min-h-dvh bg-background text-foreground">
       <aside className="flex w-16 shrink-0 flex-col border-r bg-popover max-sm:hidden">
         <div className="flex h-14 items-center justify-center border-b">
           <div className="flex h-10 w-10 items-center justify-center text-primary">
-            <WardMark />
+            <WardLogo />
           </div>
         </div>
         <nav className="flex flex-1 flex-col items-center gap-2 p-2">

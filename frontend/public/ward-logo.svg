@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="ward">
+  <g stroke="#100f0f" stroke-linejoin="round" stroke-width="2.25">
+    <path fill="#3aa99f" d="M19 7h10l5 6-7 7h-6l-7-7 5-6Z" />
+    <path fill="#f4c542" d="M5 16h15l-5 9-9 1-6-8 5-2Z" />
+    <path fill="#f4c542" d="M43 16H28l5 9 9 1 6-8-5-2Z" />
+    <path fill="#2f2419" d="M20 23h8l5 19-9 5-9-5 5-19Z" />
+  </g>
+</svg>
