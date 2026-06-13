@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="ward">
-  <g stroke="#100f0f" stroke-linejoin="round" stroke-width="2.25">
-    <path fill="#3aa99f" d="M19 7h10l5 6-7 7h-6l-7-7 5-6Z" />
-    <path fill="#f4c542" d="M5 16h15l-5 9-9 1-6-8 5-2Z" />
-    <path fill="#f4c542" d="M43 16H28l5 9 9 1 6-8-5-2Z" />
-    <path fill="#2f2419" d="M20 23h8l5 19-9 5-9-5 5-19Z" />
+<svg width="294" height="266" viewBox="0 0 294 266" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ward">
+  <g stroke="#100f0f" stroke-linejoin="round" stroke-width="6">
+    <path fill="#3aa99f" d="M146.187 99L80.6869 49.5L114.187 0.5H180.187L213.687 49.5L146.187 99Z" />
+    <path fill="#f4c542" d="M195.187 162.5L180.687 104L237.687 63.5L293.187 82L273.687 124.5L195.187 162.5Z" />
+    <path fill="#f4c542" d="M98.6869 162.5L113.187 104L56.1869 63.5L0.68689 82L20.1869 124.5L98.6869 162.5Z" />
+    <path fill="#2f2419" d="M146.687 127L132.687 119L101.687 239.5L146.687 265L190.187 239.5L159.687 119L146.687 127Z" />
   </g>
 </svg>
