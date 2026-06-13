@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ward"
+version = "0.1.0"
+description = "Local-first audit findings workspace"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "pydantic>=2.10",
+  "typer>=0.15",
+  "uvicorn[standard]>=0.34",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28",
+  "pytest>=8.3",
+]
+
+[project.scripts]
+ward = "ward.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ward"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
