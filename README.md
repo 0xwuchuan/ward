@@ -2,8 +2,6 @@
   <img src="docs/assets/ward.png" alt="Ward - Mission Control for Security Researchers" width="900">
 </p>
 
-<h1 align="center">Ward</h1>
-
 <p align="center">
   <a href="#overview">Overview</a> ·
   <a href="#features">Features</a> ·
