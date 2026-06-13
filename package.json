@@ -1,0 +1,38 @@
+{
+  "name": "ward",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "ward": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm --prefix frontend run build",
+    "dev": "tsx src/cli.ts",
+    "dev:server": "tsx src/server.ts",
+    "test": "vitest run",
+    "start": "node dist/cli.js start"
+  },
+  "files": [
+    "dist/**/*",
+    "frontend/dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@hono/node-server": "^1.19.6",
+    "better-sqlite3": "^12.5.0",
+    "hono": "^4.10.7",
+    "incur": "^0.4.8",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.10.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  }
+}

@@ -10,22 +10,23 @@
 
 ## Code Conventions
 
-- Python 3.11+, uv for deps, pytest for tests.
-- Backend uses FastAPI, Pydantic v2, Typer, SQLite.
+- Node 22+, npm for deps, Vitest for tests.
+- Backend uses Hono, zod, `better-sqlite3`, and SQLite.
+- CLI uses `incur`; command handlers should return structured objects and let `incur` format output.
 - Frontend uses npm only, React 19, TypeScript, Vite, Tailwind, Radix UI.
-- Keep FastAPI routes thin; put persistence and reusable business logic in focused modules such as `ward/db.py`.
-- Keep CLI behavior in Typer commands and share core logic with the API instead of duplicating persistence code.
+- Keep HTTP routes thin; put persistence and reusable business logic in focused modules such as `src/db.ts`.
+- Keep CLI behavior in `src/cli.ts` and share core logic with the API instead of duplicating persistence code.
 - Keep API calls in `frontend/src/lib/api.ts` and shared frontend types in `frontend/src/types.ts`.
 - Use existing `frontend/src/components/ui` primitives and lucide-react icons where possible.
 - Use Tailwind utilities and the `cn()` helper for conditional class names.
-- Use `pathlib.Path` for filesystem paths.
+- Use Node `path`/`fs` APIs through small helpers where path behavior is shared.
 - Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 
 ## Testing Expectations
 
 - No dedicated lint command is currently configured.
-- If adding linting, wire the command into `pyproject.toml` or `frontend/package.json` and document the exact command here.
-- Backend/CLI tests: run `uv run pytest`.
-- Frontend typecheck/build: run `npm --prefix frontend run build`.
-- Full-stack verification: run the backend and frontend together with `uv run ward start` and verify the workflow in the browser.
+- If adding linting, wire the command into `package.json` or `frontend/package.json` and document the exact command here.
+- Backend/CLI/API tests: run `npm test`.
+- Frontend typecheck/build and TypeScript compile: run `npm run build`.
+- Full-stack verification: run the backend and frontend together with `npm run dev -- start` and verify the workflow in the browser.
 - If a change cannot be tested locally, document the exact blocker and risk before handing it off.
