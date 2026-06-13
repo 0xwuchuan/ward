@@ -1,69 +1,51 @@
 # Ward
 
-Ward is a local-first workspace for security audit projects and findings.
+Mission Control for Security Researchers.
 
-Ward now ships as a Node-first npm package. It uses a TypeScript CLI built with
-`incur`, a local Hono HTTP API, and SQLite for persistence.
+## Features
 
-## Install
+- Local-first audit workspace backed by SQLite.
+- Project registration for repositories under review.
+- Structured finding capture with severity, status, category, source, impact, and recommendation fields.
+- File references that connect findings to related code locations.
+- Agent-oriented CLI workflows for scripts, terminals, and autonomous security review.
+- Full agent discovery through `ward skills add`, `ward mcp add`, and `ward --llms`.
+- Token-efficient TOON output by default, with JSON, YAML, Markdown, and JSONL available when needed.
+- Local web UI for browsing projects, filtering findings, editing details, and previewing related code.
+
+## Overview
+
+Ward helps security researchers track audit projects and findings without sending workspace data to an external service. It is meant to be used by agents as well as humans, so the CLI is built with [`incur`](https://github.com/wevm/incur#readme) for structured output and full agent discovery.
+
+Ward ships as a Node-first npm package with a TypeScript CLI, a local Hono HTTP API, a React web UI, and SQLite persistence.
+
+By default, Ward stores data in `~/.ward/ward.db`. Set `WARD_DB_PATH` to point Ward at a different SQLite database.
+
+For agents, Ward can sync command-specific skill files with `ward skills add`, register itself as an MCP server with `ward mcp add`, or print an LLM-readable command manifest with `ward --llms`. TOON is the default CLI output format, and JSON is available with `--json` or `--format json`.
+
+## Getting Started
+
+Install Ward:
 
 ```sh
 npm install -g ward
+```
+
+Sync Ward's agent skills, then ask your agent to register projects, create findings, and manage the audit workspace:
+
+```sh
+ward skills add
+```
+
+Open the local web UI when you want to browse projects and review findings directly:
+
+```sh
 ward serve
 ```
 
-For one-off usage:
+Other discovery options are available for agent environments that prefer MCP or command manifests:
 
 ```sh
-npx ward finding create --project . --title "Unchecked transfer" --severity high
-```
-
-## Development
-
-```sh
-npm install
-npm --prefix frontend install
-npm run build
-node dist/cli.js serve
-```
-
-By default Ward stores data in `~/.ward/ward.db`. Set `WARD_DB_PATH` to use a different SQLite database.
-
-## UI Iteration
-
-Start the backend and Vite dev server together:
-
-```sh
-npm run dev -- start
-```
-
-Agentation is installed for development-only visual feedback. Include it with the debug start command:
-
-```sh
-npm run dev -- start --debug
-```
-
-The toolbar is rendered only in Vite development mode and points at `http://localhost:4747`.
-
-## CLI
-
-```sh
-npm run dev -- place --name "My Audit"
-npm run dev -- finding create --project . --title "Unchecked transfer" --severity high --file-ref src/Vault.sol:42-51 --category access-control --description "..." --impact "..." --recommendation "..."
-npm run dev -- finding list --project .
-npm run dev -- finding get <id>
-npm run dev -- finding update <id> --status valid
-npm run dev -- finding delete <id>
-npm run dev -- start
-npm run dev -- serve
-```
-
-The CLI uses `incur` output defaults. TOON is the default output; JSON is available with `--json` or `--format json`.
-
-## Testing
-
-```sh
-npm test
-npm run build
-npm run dev -- start
+ward mcp add
+ward --llms
 ```
