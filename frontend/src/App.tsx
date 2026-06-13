@@ -164,17 +164,19 @@ function StatusBadge({ status, className }: { status: Status; className?: string
 function WardMark() {
   return (
     <svg viewBox="0 0 48 48" role="img" aria-label="Ward" className="group/wardmark h-8 w-8 overflow-visible">
-      <g fill="#3aa99f" stroke="currentColor" strokeLinejoin="round" strokeWidth="2.25">
-        <path d="M19 7h10l5 6-7 7h-6l-7-7 5-6Z" />
+      <g stroke="currentColor" strokeLinejoin="round" strokeWidth="2.25">
+        <path fill="#3aa99f" d="M19 7h10l5 6-7 7h-6l-7-7 5-6Z" />
         <path
           className="origin-center transition-transform duration-200 ease-out group-hover/wardmark:-translate-x-0.5 group-hover/wardmark:-translate-y-0.5"
+          fill="#f4c542"
           d="M5 16h15l-5 9-9 1-6-8 5-2Z"
         />
         <path
           className="origin-center transition-transform duration-200 ease-out group-hover/wardmark:translate-x-0.5 group-hover/wardmark:-translate-y-0.5"
+          fill="#f4c542"
           d="M43 16H28l5 9 9 1 6-8-5-2Z"
         />
-        <path d="M20 23h8l5 19-9 5-9-5 5-19Z" />
+        <path fill="#2f2419" d="M20 23h8l5 19-9 5-9-5 5-19Z" />
       </g>
     </svg>
   );
@@ -577,6 +579,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [newFindingHovered, setNewFindingHovered] = useState(false);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
 
@@ -750,7 +753,22 @@ export function App() {
             )}
           </div>
           {workspaceView === "findings" && (
-            <Button onClick={openCreate} disabled={!selectedProject} className="rounded-full">
+            <Button
+              variant="outline"
+              onClick={openCreate}
+              disabled={!selectedProject}
+              onMouseEnter={() => setNewFindingHovered(true)}
+              onMouseLeave={() => setNewFindingHovered(false)}
+              className="rounded-full border-border bg-muted text-foreground shadow-none"
+              style={
+                newFindingHovered
+                  ? {
+                      backgroundColor: "#eae6d7",
+                      color: "#100f0f"
+                    }
+                  : undefined
+              }
+            >
               <Plus className="h-4 w-4" />
               New finding
             </Button>
