@@ -896,7 +896,7 @@ export function App() {
   const pageTitle =
     workspaceView === "projects"
       ? "Ward - Mission Control for Security Researchers"
-      : `ward - ${selectedProject?.name ?? "findings"}`;
+      : `${selectedProject?.name ?? "findings"}`;
   const severityFilterLabel = filters.severity || "All severities";
   const statusFilterLabel = filters.status || "All statuses";
   const sourceFilterLabel = filters.source || "All sources";
