@@ -228,9 +228,6 @@ function StatusBadge({
 }
 
 function WardLogo() {
-  const [hovered, setHovered] = useState(false);
-  const wingOffset = hovered ? 10 : 0;
-
   return (
     <svg
       viewBox="0 0 294 266"
@@ -239,10 +236,8 @@ function WardLogo() {
       xmlns="http://www.w3.org/2000/svg"
       role="img"
       aria-label="ward"
-      className="h-8 w-8 shrink-0"
+      className="ward-logo h-8 w-8 shrink-0"
       style={{ overflow: "visible" }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       <rect width="294" height="266" fill="transparent" />
       <g stroke="#100f0f" strokeLinejoin="round" strokeWidth="6">
@@ -251,15 +246,13 @@ function WardLogo() {
           d="M146.187 99L80.6869 49.5L114.187 0.5H180.187L213.687 49.5L146.187 99Z"
         />
         <path
+          className="ward-logo-wing ward-logo-wing-right"
           fill="#f4c542"
-          transform={`translate(${wingOffset} 0)`}
-          style={{ transition: "transform 150ms ease" }}
           d="M195.187 162.5L180.687 104L237.687 63.5L293.187 82L273.687 124.5L195.187 162.5Z"
         />
         <path
+          className="ward-logo-wing ward-logo-wing-left"
           fill="#f4c542"
-          transform={`translate(${-wingOffset} 0)`}
-          style={{ transition: "transform 150ms ease" }}
           d="M98.6869 162.5L113.187 104L56.1869 63.5L0.68689 82L20.1869 124.5L98.6869 162.5Z"
         />
         <path
@@ -1324,7 +1317,7 @@ export function App() {
                     </Button>
                   </div>
                 </div>
-                <div className="rounded-xl border bg-popover p-5 shadow-sm">
+                <div className="border-y bg-popover px-5 py-4">
                   <FindingDetailBody
                     finding={activeFinding}
                     copiedKey={copiedKey}
