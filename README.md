@@ -18,13 +18,14 @@ It ships as a Node-first npm package with a TypeScript CLI, a local Hono HTTP AP
 ## Features
 
 - Local-first audit workspace backed by SQLite.
-- Project registration for repositories under review.
+- Project registration for repositories under review, including multiple attached directories per project.
 - Structured finding capture with severity, status, category, source, impact, and recommendation fields.
 - File references that connect findings to related code locations.
+- Project lifecycle workflows for adding paths, requesting fix review, and deleting stale projects.
 - Agent-oriented CLI workflows for scripts, terminals, and autonomous security review.
 - Agent discovery through skill files, MCP registration, and LLM-readable command manifests.
 - Token-efficient TOON output by default, with JSON, YAML, Markdown, and JSONL available when needed.
-- Local web UI for browsing projects, filtering findings, editing details, and previewing related code.
+- Local web UI for browsing projects, sorting and filtering findings, editing details, and previewing related code.
 
 ## Getting Started
 
@@ -70,10 +71,28 @@ ward finding create \
   --description "The withdrawal path does not verify the caller role."
 ```
 
-Open the local web UI to browse and filter results:
+Open the local web UI to browse, sort, and filter results:
 
 ```sh
 ward serve
+```
+
+Attach extra directories to the same audit project when the codebase spans multiple repos or packages:
+
+```sh
+ward project add-path --path ../shared-lib --path ../ops-scripts
+```
+
+When a remediation branch is ready, snapshot the current commit for fix review:
+
+```sh
+ward project request-fix-review
+```
+
+Delete a project and all of its findings when you are done:
+
+```sh
+ward project delete
 ```
 
 ## Data Storage

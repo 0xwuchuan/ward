@@ -4,4 +4,5 @@ export type GitMetadata = {
     git_commit_hash: string | null;
     git_dirty: boolean;
 };
+export declare function resolveGitCommit(cwd: string, ref?: string): string | null;
 export declare function getGitMetadata(cwd: string): GitMetadata;

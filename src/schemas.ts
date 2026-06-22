@@ -3,6 +3,8 @@ import { z } from 'zod'
 export const severitySchema = z.enum(['critical', 'high', 'medium', 'low', 'info'])
 export const sourceSchema = z.enum(['human', 'agent'])
 export const statusSchema = z.enum(['draft', 'valid', 'invalid', 'reported'])
+export const findingSortBySchema = z.enum(['created_at', 'severity', 'status', 'source'])
+export const sortDirectionSchema = z.enum(['asc', 'desc'])
 
 export const fileRefSchema = z.object({
   path: z.string().min(1),
@@ -14,13 +16,27 @@ export const projectOutSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string(),
+  paths: z.array(z.string()),
   git_remote_url: z.string().nullable(),
   git_branch: z.string().nullable(),
   git_commit_hash: z.string().nullable(),
   git_dirty: z.boolean(),
+  review_base_commit_hash: z.string().nullable(),
+  fix_review_commit_hash: z.string().nullable(),
+  fix_review_requested_at: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 })
+
+export const projectAddPathsSchema = z.object({
+  paths: z.array(z.string().min(1)).min(1),
+})
+
+export const projectFixReviewRequestSchema = z
+  .object({
+    commit_hash: z.string().min(1).optional(),
+  })
+  .strict()
 
 export const findingCreateSchema = z.object({
   title: z.string(),
@@ -67,8 +83,12 @@ export const codePreviewSchema = z.object({
 export type Severity = z.infer<typeof severitySchema>
 export type Source = z.infer<typeof sourceSchema>
 export type Status = z.infer<typeof statusSchema>
+export type FindingSortBy = z.infer<typeof findingSortBySchema>
+export type SortDirection = z.infer<typeof sortDirectionSchema>
 export type FileRef = z.infer<typeof fileRefSchema>
 export type ProjectOut = z.infer<typeof projectOutSchema>
+export type ProjectAddPaths = z.infer<typeof projectAddPathsSchema>
+export type ProjectFixReviewRequest = z.infer<typeof projectFixReviewRequestSchema>
 export type FindingCreate = z.infer<typeof findingCreateSchema>
 export type FindingUpdate = z.infer<typeof findingUpdateSchema>
 export type FindingOut = z.infer<typeof findingOutSchema>
