@@ -8,6 +8,27 @@ export declare const cli: Cli.Cli<{
         };
     };
 } & {
+    [x: `${string} delete`]: {
+        args: {};
+        options: {
+            project?: string | undefined;
+        };
+    };
+    [x: `${string} add-path`]: {
+        args: {};
+        options: {
+            path: string[];
+            project?: string | undefined;
+        };
+    };
+    [x: `${string} request-fix-review`]: {
+        args: {};
+        options: {
+            project?: string | undefined;
+            commit?: string | undefined;
+        };
+    };
+} & {
     [x: `${string} get`]: {
         args: {
             id: string;
@@ -38,6 +59,8 @@ export declare const cli: Cli.Cli<{
     [x: `${string} list`]: {
         args: {};
         options: {
+            sortBy: "created_at" | "severity" | "status" | "source";
+            sortDir: "asc" | "desc";
             project?: string | undefined;
             search?: string | undefined;
             severity?: "critical" | "high" | "medium" | "low" | "info" | undefined;

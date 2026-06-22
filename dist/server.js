@@ -2,8 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { serve as serveNode } from '@hono/node-server';
 import { Hono } from 'hono';
-import { createFinding, deleteFinding, getFinding, getProject, listFindings, listProjects, updateFinding, WardDbError, } from './db.js';
-import { codePreviewSchema, findingCreateSchema, findingUpdateSchema } from './schemas.js';
+import { createFinding, deleteFinding, deleteProject, getFinding, getProject, listFindings, listProjects, requestFixReview, updateFinding, WardDbError, } from './db.js';
+import { getGitMetadata, resolveGitCommit } from './git.js';
+import { codePreviewSchema, findingCreateSchema, findingUpdateSchema, projectFixReviewRequestSchema, } from './schemas.js';
 import { frontendDistDir } from './paths.js';
 const maxCodePreviewLines = 80;
 const languageBySuffix = {
@@ -52,14 +53,24 @@ async function jsonBody(c) {
         return {};
     }
 }
+function isWithinRoot(root, target) {
+    const relative = path.relative(root, target);
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+async function readPreviewFile(target) {
+    const stat = await fs.stat(target);
+    if (!stat.isFile())
+        throw new WardDbError('File was not found.');
+    const buffer = await fs.readFile(target);
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+}
 async function codePreview(project, ref) {
     const rawPath = String(ref.path ?? '');
     const startLine = Number(ref.start_line ?? 1);
     const requestedEnd = Number(ref.end_line ?? startLine + 24);
     const endLine = Math.min(requestedEnd, startLine + maxCodePreviewLines - 1);
-    const projectPath = path.resolve(project.path);
-    const target = path.resolve(projectPath, rawPath);
-    const language = languageBySuffix[path.extname(target).toLowerCase()] ?? 'text';
+    const roots = [...new Set((project.paths?.length ? project.paths : [project.path]).map((root) => path.resolve(root)))];
+    const language = languageBySuffix[path.extname(rawPath).toLowerCase()] ?? 'text';
     const preview = {
         path: rawPath,
         start_line: startLine,
@@ -68,38 +79,56 @@ async function codePreview(project, ref) {
         code: '',
         error: null,
     };
-    const relative = path.relative(projectPath, target);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) {
-        return { ...preview, error: 'File reference is outside the registered project path.' };
+    const candidates = path.isAbsolute(rawPath)
+        ? [path.resolve(rawPath)]
+        : roots.map((root) => path.resolve(root, rawPath));
+    const inBoundsCandidates = candidates.filter((candidate) => roots.some((root) => isWithinRoot(root, candidate)));
+    if (inBoundsCandidates.length === 0) {
+        return { ...preview, error: 'File reference is outside the registered project paths.' };
     }
-    let content;
-    try {
-        const stat = await fs.stat(target);
-        if (!stat.isFile())
-            return { ...preview, error: 'File was not found.' };
-        const buffer = await fs.readFile(target);
-        content = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    if (!path.isAbsolute(rawPath) && inBoundsCandidates.length > 1) {
+        const existingCandidates = (await Promise.all(inBoundsCandidates.map(async (candidate) => {
+            try {
+                const stat = await fs.stat(candidate);
+                return stat.isFile() ? candidate : null;
+            }
+            catch {
+                return null;
+            }
+        }))).filter((candidate) => Boolean(candidate));
+        if (existingCandidates.length > 1) {
+            return { ...preview, error: 'File reference is ambiguous across the registered project paths.' };
+        }
     }
-    catch (error) {
-        if (error.code === 'ENOENT')
-            return { ...preview, error: 'File was not found.' };
-        if (error instanceof TypeError)
-            return { ...preview, error: 'File is not valid UTF-8 text.' };
-        return { ...preview, error: error instanceof Error ? error.message : String(error) };
+    for (const target of inBoundsCandidates) {
+        try {
+            const content = await readPreviewFile(target);
+            const lines = content.split(/\r?\n/);
+            if (lines.length > 0 && lines.at(-1) === '')
+                lines.pop();
+            if (lines.length === 0)
+                return { ...preview, end_line: startLine, error: 'File is empty.' };
+            const boundedStart = Math.max(1, Math.min(startLine, lines.length));
+            const boundedEnd = Math.max(boundedStart, Math.min(endLine, lines.length));
+            return codePreviewSchema.parse({
+                ...preview,
+                start_line: boundedStart,
+                end_line: boundedEnd,
+                code: lines.slice(boundedStart - 1, boundedEnd).join('\n'),
+            });
+        }
+        catch (error) {
+            const code = error.code;
+            if (code === 'ENOENT')
+                continue;
+            if (error instanceof TypeError)
+                return { ...preview, error: 'File is not valid UTF-8 text.' };
+            if (error instanceof WardDbError)
+                continue;
+            return { ...preview, error: error instanceof Error ? error.message : String(error) };
+        }
     }
-    const lines = content.split(/\r?\n/);
-    if (lines.length > 0 && lines.at(-1) === '')
-        lines.pop();
-    if (lines.length === 0)
-        return { ...preview, end_line: startLine, error: 'File is empty.' };
-    const boundedStart = Math.max(1, Math.min(startLine, lines.length));
-    const boundedEnd = Math.max(boundedStart, Math.min(endLine, lines.length));
-    return codePreviewSchema.parse({
-        ...preview,
-        start_line: boundedStart,
-        end_line: boundedEnd,
-        code: lines.slice(boundedStart - 1, boundedEnd).join('\n'),
-    });
+    return { ...preview, error: 'File was not found.' };
 }
 async function staticResponse(filePath) {
     const dist = frontendDistDir();
@@ -141,6 +170,32 @@ export function createApp() {
             return c.json({ detail: 'project not found' }, 404);
         return c.json(project);
     });
+    app.delete('/api/projects/:projectId', (c) => {
+        if (!deleteProject(c.req.param('projectId')))
+            return c.json({ detail: 'project not found' }, 404);
+        return new Response(null, { status: 204 });
+    });
+    app.post('/api/projects/:projectId/fix-review', async (c) => {
+        const projectId = c.req.param('projectId');
+        const project = getProject(projectId);
+        if (!project)
+            return c.json({ detail: 'project not found' }, 404);
+        try {
+            const payload = projectFixReviewRequestSchema.parse(await jsonBody(c));
+            const commitHash = payload.commit_hash ? resolveGitCommit(project.path, payload.commit_hash) : undefined;
+            if (payload.commit_hash && !commitHash) {
+                throw new WardDbError(`git commit not found: ${payload.commit_hash}`);
+            }
+            return c.json(requestFixReview({
+                projectId,
+                commitHash,
+                gitMetadata: getGitMetadata(project.path),
+            }));
+        }
+        catch (error) {
+            return errorStatus(error);
+        }
+    });
     app.get('/api/projects/:projectId/findings', (c) => {
         const projectId = c.req.param('projectId');
         if (!getProject(projectId))
@@ -152,6 +207,8 @@ export function createApp() {
                 status: c.req.query('status'),
                 source: c.req.query('source'),
                 category: c.req.query('category'),
+                sort_by: c.req.query('sort_by'),
+                sort_dir: c.req.query('sort_dir'),
             }));
         }
         catch (error) {

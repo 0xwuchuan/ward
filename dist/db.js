@@ -7,6 +7,8 @@ import { absolutePath, expandHome } from './paths.js';
 const severities = ['critical', 'high', 'medium', 'low', 'info'];
 const sources = ['human', 'agent'];
 const statuses = ['draft', 'valid', 'invalid', 'reported'];
+const findingSortBys = ['created_at', 'severity', 'status', 'source'];
+const sortDirections = ['asc', 'desc'];
 const fileRefPattern = /^(?<path>.+?)(?::(?<start>\d+)(?:-(?<end>\d+))?)?$/;
 export class WardDbError extends Error {
     constructor(message) {
@@ -32,8 +34,15 @@ export function connect(target) {
     initDb(db);
     return db;
 }
+function ensureColumn(db, table, column, definition) {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all();
+    if (rows.some((row) => row.name === column))
+        return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
 export function initDb(db) {
     db.exec(`
+    BEGIN;
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -42,6 +51,9 @@ export function initDb(db) {
       git_branch TEXT,
       git_commit_hash TEXT,
       git_dirty INTEGER NOT NULL DEFAULT 0,
+      review_base_commit_hash TEXT,
+      fix_review_commit_hash TEXT,
+      fix_review_requested_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -62,10 +74,30 @@ export function initDb(db) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS project_paths (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      path TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_projects_path ON projects(path);
     CREATE INDEX IF NOT EXISTS idx_findings_project_id ON findings(project_id);
     CREATE INDEX IF NOT EXISTS idx_findings_status ON findings(status);
     CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity);
+    CREATE INDEX IF NOT EXISTS idx_project_paths_project_id ON project_paths(project_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_project_paths_path ON project_paths(path);
+    COMMIT;
+  `);
+    ensureColumn(db, 'projects', 'review_base_commit_hash', 'TEXT');
+    ensureColumn(db, 'projects', 'fix_review_commit_hash', 'TEXT');
+    ensureColumn(db, 'projects', 'fix_review_requested_at', 'TEXT');
+    db.exec(`
+    BEGIN;
+    INSERT OR IGNORE INTO project_paths (id, project_id, path, created_at)
+    SELECT lower(hex(randomblob(16))), id, path, created_at FROM projects
+    WHERE path IS NOT NULL AND trim(path) != '';
+    COMMIT;
   `);
 }
 function withDb(db, fn) {
@@ -146,15 +178,25 @@ function decodeFileRefs(value) {
         return [];
     }
 }
-function projectFromRow(row) {
+function projectPathsFromRow(row, conn) {
+    const extras = conn
+        .prepare('SELECT path FROM project_paths WHERE project_id = ? AND path != ? ORDER BY created_at ASC, path ASC')
+        .all(row.id, row.path);
+    return [row.path, ...extras.map((item) => item.path)];
+}
+function projectFromRow(row, conn) {
     return {
         id: row.id,
         name: row.name,
         path: row.path,
+        paths: projectPathsFromRow(row, conn),
         git_remote_url: row.git_remote_url,
         git_branch: row.git_branch,
         git_commit_hash: row.git_commit_hash,
         git_dirty: Boolean(row.git_dirty),
+        review_base_commit_hash: row.review_base_commit_hash,
+        fix_review_commit_hash: row.fix_review_commit_hash,
+        fix_review_requested_at: row.fix_review_requested_at,
         created_at: row.created_at,
         updated_at: row.updated_at,
     };
@@ -176,22 +218,54 @@ function findingFromRow(row) {
         updated_at: row.updated_at,
     };
 }
+function getProjectRowByPath(projectPath, conn) {
+    return conn
+        .prepare(`
+      SELECT DISTINCT projects.*
+      FROM projects
+      LEFT JOIN project_paths ON project_paths.project_id = projects.id
+      WHERE projects.path = ? OR project_paths.path = ?
+      LIMIT 1
+    `)
+        .get(projectPath, projectPath);
+}
+function ensureProjectPath(conn, projectId, candidatePath) {
+    const normalized = absolutePath(candidatePath);
+    const existing = getProjectRowByPath(normalized, conn);
+    if (existing && existing.id !== projectId) {
+        throw new WardDbError(`path is already registered to project: ${normalized}`);
+    }
+    const row = conn.prepare('SELECT id FROM project_paths WHERE path = ?').get(normalized);
+    if (row)
+        return;
+    conn
+        .prepare('INSERT INTO project_paths (id, project_id, path, created_at) VALUES (?, ?, ?, ?)')
+        .run(randomUUID(), projectId, normalized, nowIso());
+}
+export function listProjectPaths(projectId, db) {
+    return withDb(db, (conn) => {
+        const project = getProject(projectId, conn);
+        if (!project)
+            throw new WardDbError('project not found');
+        return project.paths;
+    });
+}
 export function listProjects(db) {
     return withDb(db, (conn) => {
         const rows = conn.prepare('SELECT * FROM projects ORDER BY updated_at DESC, name ASC').all();
-        return rows.map(projectFromRow);
+        return rows.map((row) => projectFromRow(row, conn));
     });
 }
 export function getProject(projectId, db) {
     return withDb(db, (conn) => {
         const row = conn.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
-        return row ? projectFromRow(row) : null;
+        return row ? projectFromRow(row, conn) : null;
     });
 }
 export function getProjectByPath(projectPath, db) {
     return withDb(db, (conn) => {
-        const row = conn.prepare('SELECT * FROM projects WHERE path = ?').get(absolutePath(projectPath));
-        return row ? projectFromRow(row) : null;
+        const row = getProjectRowByPath(absolutePath(projectPath), conn);
+        return row ? projectFromRow(row, conn) : null;
     });
 }
 export function resolveProject(identifier, cwd = process.cwd(), db) {
@@ -199,12 +273,12 @@ export function resolveProject(identifier, cwd = process.cwd(), db) {
         if (identifier) {
             const byId = conn.prepare('SELECT * FROM projects WHERE id = ?').get(identifier);
             if (byId)
-                return projectFromRow(byId);
-            const byPath = conn.prepare('SELECT * FROM projects WHERE path = ?').get(absolutePath(identifier));
-            return byPath ? projectFromRow(byPath) : null;
+                return projectFromRow(byId, conn);
+            const byPath = getProjectRowByPath(absolutePath(identifier), conn);
+            return byPath ? projectFromRow(byPath, conn) : null;
         }
-        const row = conn.prepare('SELECT * FROM projects WHERE path = ?').get(absolutePath(cwd));
-        return row ? projectFromRow(row) : null;
+        const row = getProjectRowByPath(absolutePath(cwd), conn);
+        return row ? projectFromRow(row, conn) : null;
     });
 }
 export function registerProject(options) {
@@ -212,9 +286,10 @@ export function registerProject(options) {
         const projectPath = absolutePath(options.path);
         const metadata = options.gitMetadata ?? {};
         const timestamp = nowIso();
-        const existing = conn.prepare('SELECT * FROM projects WHERE path = ?').get(projectPath);
+        const existing = getProjectRowByPath(projectPath, conn);
         if (existing) {
             const nextName = options.name?.trim() || existing.name;
+            const nextReviewBase = existing.review_base_commit_hash ?? metadata.git_commit_hash ?? null;
             conn
                 .prepare(`
           UPDATE projects
@@ -223,10 +298,12 @@ export function registerProject(options) {
               git_branch = ?,
               git_commit_hash = ?,
               git_dirty = ?,
+              review_base_commit_hash = ?,
               updated_at = ?
           WHERE id = ?
         `)
-                .run(nextName, metadata.git_remote_url ?? null, metadata.git_branch ?? null, metadata.git_commit_hash ?? null, metadata.git_dirty ? 1 : 0, timestamp, existing.id);
+                .run(nextName, metadata.git_remote_url ?? null, metadata.git_branch ?? null, metadata.git_commit_hash ?? null, metadata.git_dirty ? 1 : 0, nextReviewBase, timestamp, existing.id);
+            ensureProjectPath(conn, existing.id, projectPath);
             const updated = getProject(existing.id, conn);
             if (!updated)
                 throw new WardDbError('project not found');
@@ -238,14 +315,71 @@ export function registerProject(options) {
             .prepare(`
         INSERT INTO projects (
           id, name, path, git_remote_url, git_branch, git_commit_hash,
-          git_dirty, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          git_dirty, review_base_commit_hash, fix_review_commit_hash,
+          fix_review_requested_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-            .run(projectId, displayName, projectPath, metadata.git_remote_url ?? null, metadata.git_branch ?? null, metadata.git_commit_hash ?? null, metadata.git_dirty ? 1 : 0, timestamp, timestamp);
+            .run(projectId, displayName, projectPath, metadata.git_remote_url ?? null, metadata.git_branch ?? null, metadata.git_commit_hash ?? null, metadata.git_dirty ? 1 : 0, metadata.git_commit_hash ?? null, null, null, timestamp, timestamp);
+        ensureProjectPath(conn, projectId, projectPath);
         const created = getProject(projectId, conn);
         if (!created)
             throw new WardDbError('project not found');
         return created;
+    });
+}
+export function addProjectPaths(options) {
+    return withDb(options.db, (conn) => {
+        const project = getProject(options.projectId, conn);
+        if (!project)
+            throw new WardDbError('project not found');
+        const uniquePaths = [...new Set([...options.paths].map((candidate) => absolutePath(candidate)))];
+        if (uniquePaths.length === 0)
+            throw new WardDbError('at least one path is required');
+        for (const candidate of uniquePaths) {
+            ensureProjectPath(conn, project.id, candidate);
+        }
+        conn.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(nowIso(), project.id);
+        const updated = getProject(project.id, conn);
+        if (!updated)
+            throw new WardDbError('project not found');
+        return updated;
+    });
+}
+export function requestFixReview(options) {
+    return withDb(options.db, (conn) => {
+        const project = getProject(options.projectId, conn);
+        if (!project)
+            throw new WardDbError('project not found');
+        const metadata = options.gitMetadata ?? {};
+        const nextCommit = options.commitHash?.trim() || metadata.git_commit_hash || project.git_commit_hash;
+        if (!nextCommit)
+            throw new WardDbError('project does not have a git commit to review');
+        if (nextCommit === project.review_base_commit_hash) {
+            throw new WardDbError('fix review commit must differ from the current review base commit');
+        }
+        conn
+            .prepare(`
+        UPDATE projects
+        SET git_remote_url = ?,
+            git_branch = ?,
+            git_commit_hash = ?,
+            git_dirty = ?,
+            fix_review_commit_hash = ?,
+            fix_review_requested_at = ?,
+            updated_at = ?
+        WHERE id = ?
+      `)
+            .run(metadata.git_remote_url ?? project.git_remote_url, metadata.git_branch ?? project.git_branch, metadata.git_commit_hash ?? project.git_commit_hash, metadata.git_dirty == null ? (project.git_dirty ? 1 : 0) : metadata.git_dirty ? 1 : 0, nextCommit, nowIso(), nowIso(), project.id);
+        const updated = getProject(project.id, conn);
+        if (!updated)
+            throw new WardDbError('project not found');
+        return updated;
+    });
+}
+export function deleteProject(projectId, db) {
+    return withDb(db, (conn) => {
+        const result = conn.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+        return result.changes > 0;
     });
 }
 export function createFinding(options) {
@@ -278,6 +412,44 @@ export function getFinding(findingId, db) {
         return row ? findingFromRow(row) : null;
     });
 }
+function findingsOrderClause(sortBy, sortDir) {
+    const direction = sortDir.toUpperCase();
+    if (sortBy === 'created_at')
+        return `created_at ${direction}, title ASC`;
+    if (sortBy === 'severity') {
+        return `
+      CASE severity
+        WHEN 'critical' THEN 5
+        WHEN 'high' THEN 4
+        WHEN 'medium' THEN 3
+        WHEN 'low' THEN 2
+        ELSE 1
+      END ${direction},
+      created_at DESC,
+      title ASC
+    `.replace(/\n\s+/g, ' ');
+    }
+    if (sortBy === 'status') {
+        return `
+      CASE status
+        WHEN 'reported' THEN 4
+        WHEN 'valid' THEN 3
+        WHEN 'draft' THEN 2
+        ELSE 1
+      END ${direction},
+      created_at DESC,
+      title ASC
+    `.replace(/\n\s+/g, ' ');
+    }
+    return `
+    CASE source
+      WHEN 'human' THEN 2
+      ELSE 1
+    END ${direction},
+    created_at DESC,
+    title ASC
+  `.replace(/\n\s+/g, ' ');
+}
 export function listFindings(projectId, filters = {}, db) {
     return withDb(db, (conn) => {
         const where = ['project_id = ?'];
@@ -303,8 +475,10 @@ export function listFindings(projectId, filters = {}, db) {
             where.push('category = ?');
             params.push(filters.category);
         }
+        const sortBy = validateChoice('sort_by', filters.sort_by ?? 'created_at', findingSortBys);
+        const sortDir = validateChoice('sort_dir', filters.sort_dir ?? 'desc', sortDirections);
         const rows = conn
-            .prepare(`SELECT * FROM findings WHERE ${where.join(' AND ')} ORDER BY created_at DESC, title ASC`)
+            .prepare(`SELECT * FROM findings WHERE ${where.join(' AND ')} ORDER BY ${findingsOrderClause(sortBy, sortDir)}`)
             .all(...params);
         return rows.map(findingFromRow);
     });

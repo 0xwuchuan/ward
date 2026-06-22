@@ -19,6 +19,10 @@ function git(cwd: string, args: string[]): string | null {
   }
 }
 
+export function resolveGitCommit(cwd: string, ref = 'HEAD'): string | null {
+  return git(cwd, ['rev-parse', ref])
+}
+
 export function getGitMetadata(cwd: string): GitMetadata {
   const worktree = git(cwd, ['rev-parse', '--show-toplevel'])
   if (!worktree) {

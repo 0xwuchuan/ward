@@ -5,24 +5,29 @@ import { fileURLToPath } from 'node:url'
 import { Cli, z } from 'incur'
 
 import {
+  addProjectPaths,
   createFinding,
   deleteFinding,
+  deleteProject,
   getFinding,
   listFindings,
   parseFileRefs,
   registerProject,
+  requestFixReview,
   resolveProject,
   updateFinding,
   WardDbError,
 } from './db.js'
-import { getGitMetadata } from './git.js'
+import { getGitMetadata, resolveGitCommit } from './git.js'
 import { frontendDir } from './paths.js'
 import { serve as serveHttp } from './server.js'
 import {
   findingCreateSchema,
   findingOutSchema,
+  findingSortBySchema,
   projectOutSchema,
   severitySchema,
+  sortDirectionSchema,
   sourceSchema,
   statusSchema,
 } from './schemas.js'
@@ -137,12 +142,24 @@ const findingCli = Cli.create('finding', {
       status: statusSchema.optional(),
       source: sourceSchema.optional(),
       category: z.string().optional(),
+      sortBy: findingSortBySchema.default('created_at'),
+      sortDir: sortDirectionSchema.default('desc'),
     }),
     alias: { project: 'p' },
     output: z.object({ findings: z.array(findingOutSchema) }),
     run(c) {
       const project = requireProject(c.options.project)
-      return { findings: listFindings(project.id, c.options) }
+      return {
+        findings: listFindings(project.id, {
+          search: c.options.search,
+          severity: c.options.severity,
+          status: c.options.status,
+          source: c.options.source,
+          category: c.options.category,
+          sort_by: c.options.sortBy,
+          sort_dir: c.options.sortDir,
+        }),
+      }
     },
   })
   .command('get', {
@@ -187,6 +204,54 @@ const findingCli = Cli.create('finding', {
     },
   })
 
+const projectCli = Cli.create('project', {
+  description: 'Manage registered projects.',
+})
+  .command('add-path', {
+    description: 'Attach additional directories to an existing project.',
+    options: z.object({
+      project: z.string().optional().describe('Registered project id or path. Defaults to the current directory.'),
+      path: z.array(z.string()).min(1).describe('Additional directory path. Repeat to attach more than one.'),
+    }),
+    alias: { project: 'p' },
+    output: projectOutSchema,
+    run(c) {
+      const project = requireProject(c.options.project)
+      return addProjectPaths({ projectId: project.id, paths: c.options.path })
+    },
+  })
+  .command('request-fix-review', {
+    description: 'Mark the current or supplied git commit as ready for fix review.',
+    options: z.object({
+      project: z.string().optional().describe('Registered project id or path. Defaults to the current directory.'),
+      commit: z.string().optional().describe('Commit hash or rev-parse expression. Defaults to HEAD.'),
+    }),
+    alias: { project: 'p' },
+    output: projectOutSchema,
+    run(c) {
+      const project = requireProject(c.options.project)
+      const commit = c.options.commit ? resolveGitCommit(project.path, c.options.commit) : undefined
+      if (c.options.commit && !commit) throw new WardDbError(`git commit not found: ${c.options.commit}`)
+      return requestFixReview({
+        projectId: project.id,
+        commitHash: commit,
+        gitMetadata: getGitMetadata(project.path),
+      })
+    },
+  })
+  .command('delete', {
+    description: 'Delete a registered project and all of its findings.',
+    options: z.object({
+      project: z.string().optional().describe('Registered project id or path. Defaults to the current directory.'),
+    }),
+    alias: { project: 'p' },
+    output: z.object({ deleted: z.boolean(), project_id: z.string() }),
+    run(c) {
+      const project = requireProject(c.options.project)
+      return { deleted: deleteProject(project.id), project_id: project.id }
+    },
+  })
+
 export const cli = Cli.create('ward', {
   description: 'Ward local audit findings workspace.',
   version: '0.1.0',
@@ -206,6 +271,7 @@ export const cli = Cli.create('ward', {
       })
     },
   })
+  .command(projectCli)
   .command(findingCli)
   .command('serve', {
     description: 'Start the local HTTP API and serve the built web UI.',

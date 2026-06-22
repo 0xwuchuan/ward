@@ -1,11 +1,14 @@
-import { useEffect, useState, type JSX, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import {
   AlertTriangle,
+  ArrowUpDown,
   ChartNoAxesColumn,
   Check,
   CheckCircle2,
+  ChevronLeft,
   CircleDot,
   Copy,
+  Expand,
   FileText,
   FolderKanban,
   GitBranch,
@@ -36,9 +39,11 @@ import { Textarea } from "./components/ui/textarea";
 import {
   createFinding,
   deleteFinding,
+  deleteProject,
   getRelatedCode,
   listFindings,
   listProjects,
+  requestFixReview,
   updateFinding,
 } from "./lib/api";
 import { cn } from "./lib/utils";
@@ -47,24 +52,33 @@ import type {
   FileRef,
   Finding,
   FindingPayload,
+  FindingSortBy,
   Project,
   Severity,
   Source,
+  SortDirection,
   Status,
 } from "./types";
 
 const severities: Severity[] = ["critical", "high", "medium", "low", "info"];
 const statuses: Status[] = ["draft", "valid", "invalid", "reported"];
 const sources: Source[] = ["human", "agent"];
+const drawerWidthBounds = { min: 680, max: 1240 };
 
 type DrawerMode = "view" | "edit" | "create";
-type WorkspaceView = "findings" | "projects";
+type WorkspaceView = "findings" | "projects" | "finding-detail";
+type DetailSurface = "drawer" | "page";
 
 type Filters = {
   search: string;
   severity: string;
   status: string;
   source: string;
+};
+
+type SortState = {
+  sort_by: FindingSortBy;
+  sort_dir: SortDirection;
 };
 
 const emptyPayload: FindingPayload = {
@@ -154,6 +168,16 @@ function shortPath(path: string) {
 
 function shortCommit(commit: string | null) {
   return commit ? commit.slice(0, 7) : "No commit";
+}
+
+function projectPathSummary(project: Project) {
+  if (project.paths.length <= 1) return shortPath(project.path);
+  return `${shortPath(project.path)} +${project.paths.length - 1} dirs`;
+}
+
+function fixReviewSummary(project: Project) {
+  if (!project.fix_review_commit_hash) return null;
+  return `${shortCommit(project.review_base_commit_hash)} → ${shortCommit(project.fix_review_commit_hash)}`;
 }
 
 function severityVariant(severity: Severity) {
@@ -664,11 +688,15 @@ function findingToPayload(finding: Finding): FindingPayload {
 function ProjectsPage({
   projects,
   selectedProjectId,
+  deletingProjectId,
   onOpenProject,
+  onDeleteProject,
 }: {
   projects: Project[];
   selectedProjectId: string | null;
+  deletingProjectId: string | null;
   onOpenProject: (projectId: string) => void;
+  onDeleteProject: (project: Project) => void;
 }) {
   return (
     <section className="min-h-0 flex-1 overflow-auto">
@@ -690,51 +718,176 @@ function ProjectsPage({
         ) : (
           <div className="divide-y overflow-hidden rounded-md border bg-background">
             {projects.map((project) => (
-              <button
+              <div
                 key={project.id}
-                type="button"
-                onClick={() => onOpenProject(project.id)}
                 className={cn(
-                  "grid w-full grid-cols-1 gap-2 px-4 py-3 text-left transition-colors hover:bg-muted md:grid-cols-[minmax(180px,1fr)_minmax(220px,1.4fr)_120px_120px] md:items-center",
+                  "grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-[minmax(180px,1fr)_minmax(220px,1.4fr)_120px_120px_auto] md:items-center",
                   selectedProjectId === project.id && "bg-accent",
                 )}
               >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    {project.name}
+                <button
+                  type="button"
+                  onClick={() => onOpenProject(project.id)}
+                  className="grid min-w-0 grid-cols-1 gap-2 text-left transition-colors hover:text-foreground md:col-span-4 md:grid-cols-[subgrid] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">
+                      {project.name}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground md:hidden">
+                      <span className="truncate">{projectPathSummary(project)}</span>
+                      {project.paths.length > 1 && (
+                        <Badge variant="muted">{project.paths.length} dirs</Badge>
+                      )}
+                      {project.fix_review_commit_hash && (
+                        <Badge variant="purple">Fix review</Badge>
+                      )}
+                    </div>
                   </div>
-                  <div className="mt-1 truncate text-xs text-muted-foreground md:hidden">
-                    {shortPath(project.path)}
-                  </div>
-                </div>
-                <span className="hidden truncate font-mono text-xs text-muted-foreground md:block">
-                  {project.path}
-                </span>
-                <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                  <GitBranch className="h-3 w-3 shrink-0" />
-                  <span className="truncate">
-                    {project.git_branch ?? "No branch"}
+                  <span className="hidden truncate font-mono text-xs text-muted-foreground md:block">
+                    {projectPathSummary(project)}
                   </span>
-                </span>
-                <div className="flex items-center gap-2">
-                  <Badge variant={project.git_dirty ? "yellow" : "muted"}>
-                    {project.git_dirty ? (
-                      <AlertTriangle className="h-3 w-3" />
-                    ) : (
-                      <CheckCircle2 className="h-3 w-3" />
+                  <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                    <GitBranch className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {project.git_branch ?? "No branch"}
+                    </span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {project.fix_review_commit_hash && (
+                      <Badge variant="purple">Fix review</Badge>
                     )}
-                    {project.git_dirty ? "dirty" : "clean"}
-                  </Badge>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {shortCommit(project.git_commit_hash)}
-                  </span>
+                    <Badge variant={project.git_dirty ? "yellow" : "muted"}>
+                      {project.git_dirty ? (
+                        <AlertTriangle className="h-3 w-3" />
+                      ) : (
+                        <CheckCircle2 className="h-3 w-3" />
+                      )}
+                      {project.git_dirty ? "dirty" : "clean"}
+                    </Badge>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {shortCommit(project.git_commit_hash)}
+                    </span>
+                  </div>
+                </button>
+                <div className="flex items-center justify-end gap-2 md:justify-self-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full text-muted-foreground hover:text-destructive"
+                    aria-label={`Delete ${project.name}`}
+                    title="Delete project"
+                    disabled={deletingProjectId === project.id}
+                    onClick={() => onDeleteProject(project)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
       </div>
     </section>
+  );
+}
+
+function SortHeader({
+  label,
+  active,
+  direction,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  direction: SortDirection;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "inline-flex items-center justify-center gap-1 rounded-full px-2 py-1 text-xs transition-colors hover:bg-muted/70",
+        active && "bg-muted text-foreground",
+      )}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      <ArrowUpDown className="h-3 w-3" />
+      {active && <span className="text-[10px] uppercase">{direction}</span>}
+    </button>
+  );
+}
+
+function FindingDetailBody({
+  finding,
+  copiedKey,
+  onCopy,
+  onUpdateStatus,
+  codePreviews,
+  codeLoading,
+}: {
+  finding: Finding;
+  copiedKey: string | null;
+  onCopy: (key: string, value: string) => void;
+  onUpdateStatus: (status: Status) => void;
+  codePreviews: CodePreview[];
+  codeLoading: boolean;
+}) {
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <SeverityBadge severity={finding.severity} />
+        <StatusBadge status={finding.status} />
+        <Badge variant={sourceVariant(finding.source)}>{finding.source}</Badge>
+        <div className="ml-auto w-36">
+          <Select value={finding.status} onValueChange={(value: Status) => onUpdateStatus(value)}>
+            <SelectTrigger className="h-8 rounded-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {statuses.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {status}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <FindingMetadataRow
+        fileRefs={finding.file_refs.map(fileRefToText).join("\n")}
+        category={finding.category}
+        copiedKey={copiedKey}
+        onCopy={onCopy}
+      />
+      <FieldBlock
+        label="Description"
+        value={finding.description}
+        copyKey="description"
+        copiedKey={copiedKey}
+        onCopy={onCopy}
+        multiline
+      />
+      <FieldBlock
+        label="Impact"
+        value={finding.impact}
+        copyKey="impact"
+        copiedKey={copiedKey}
+        onCopy={onCopy}
+        multiline
+      />
+      <FieldBlock
+        label="Recommendation"
+        value={finding.recommendation}
+        copyKey="recommendation"
+        copiedKey={copiedKey}
+        onCopy={onCopy}
+        multiline
+      />
+      <CodePreviewBlocks previews={codePreviews} loading={codeLoading} />
+    </>
   );
 }
 
@@ -751,6 +904,7 @@ export function App() {
     source: "",
   });
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("findings");
+  const [detailSurface, setDetailSurface] = useState<DetailSurface>("drawer");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>("view");
   const [activeFinding, setActiveFinding] = useState<Finding | null>(null);
@@ -761,14 +915,31 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [newFindingHovered, setNewFindingHovered] = useState(false);
+  const [sortState, setSortState] = useState<SortState>({
+    sort_by: "created_at",
+    sort_dir: "desc",
+  });
+  const [drawerWidth, setDrawerWidth] = useState(820);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? null;
+  const activeDetailSurface = drawerMode === "view" ? detailSurface : "drawer";
+  const drawerStyle = useMemo(
+    () => ({ width: `min(${drawerWidth}px, 100vw)` }),
+    [drawerWidth],
+  );
 
   async function refreshProjects() {
     const nextProjects = await listProjects();
     setProjects(nextProjects);
-    setSelectedProjectId((current) => current ?? nextProjects[0]?.id ?? null);
+    setSelectedProjectId((current) => {
+      if (current && nextProjects.some((project) => project.id === current)) {
+        return current;
+      }
+      return nextProjects[0]?.id ?? null;
+    });
   }
 
   async function refreshFindings(projectId = selectedProjectId) {
@@ -776,7 +947,10 @@ export function App() {
       setFindings([]);
       return;
     }
-    const nextFindings = await listFindings(projectId, filters);
+    const nextFindings = await listFindings(projectId, {
+      ...filters,
+      ...sortState,
+    });
     setFindings(nextFindings);
   }
 
@@ -794,10 +968,16 @@ export function App() {
     filters.severity,
     filters.status,
     filters.source,
+    sortState.sort_by,
+    sortState.sort_dir,
   ]);
 
   useEffect(() => {
-    if (!drawerOpen || drawerMode !== "view" || !activeFinding) {
+    if (
+      drawerMode !== "view" ||
+      !activeFinding ||
+      (activeDetailSurface === "drawer" && !drawerOpen)
+    ) {
       setCodePreviews([]);
       setCodeLoading(false);
       return;
@@ -818,12 +998,38 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [drawerOpen, drawerMode, activeFinding?.id]);
+  }, [activeDetailSurface, drawerOpen, drawerMode, activeFinding?.id]);
+
+  useEffect(() => {
+    if (!drawerOpen) dragStateRef.current = null;
+  }, [drawerOpen]);
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      if (!dragStateRef.current) return;
+      const nextWidth = dragStateRef.current.startWidth + (dragStateRef.current.startX - event.clientX);
+      setDrawerWidth(
+        Math.max(drawerWidthBounds.min, Math.min(drawerWidthBounds.max, nextWidth)),
+      );
+    }
+
+    function handlePointerUp() {
+      dragStateRef.current = null;
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
 
   function openCreate() {
     setActiveFinding(null);
     setFormValue(emptyPayload);
     setDrawerMode("create");
+    setWorkspaceView("findings");
     setDrawerOpen(true);
   }
 
@@ -831,12 +1037,70 @@ export function App() {
     setActiveFinding(finding);
     setFormValue(findingToPayload(finding));
     setDrawerMode("view");
+    if (detailSurface === "page") {
+      setWorkspaceView("finding-detail");
+      setDrawerOpen(false);
+      return;
+    }
     setDrawerOpen(true);
   }
 
   function openProject(projectId: string) {
     setSelectedProjectId(projectId);
     setWorkspaceView("findings");
+    setDrawerOpen(false);
+  }
+
+  function toggleDetailSurface(nextSurface: DetailSurface) {
+    setDetailSurface(nextSurface);
+    if (drawerMode !== "view" || !activeFinding) return;
+    if (nextSurface === "page") {
+      setDrawerOpen(false);
+      setWorkspaceView("finding-detail");
+      return;
+    }
+    setWorkspaceView("findings");
+    setDrawerOpen(true);
+  }
+
+  function handleDrawerResizeStart(event: React.PointerEvent<HTMLButtonElement>) {
+    dragStateRef.current = { startX: event.clientX, startWidth: drawerWidth };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  async function handleRequestFixReview() {
+    if (!selectedProject) return;
+    try {
+      setError(null);
+      const updated = await requestFixReview(selectedProject.id);
+      setProjects((current) =>
+        current.map((project) => (project.id === updated.id ? updated : project)),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to request fix review");
+    }
+  }
+
+  async function handleDeleteProject(project: Project) {
+    if (!window.confirm(`Delete project \"${project.name}\" and its findings?`)) {
+      return;
+    }
+    try {
+      setDeletingProjectId(project.id);
+      setError(null);
+      await deleteProject(project.id);
+      if (selectedProjectId === project.id) {
+        setActiveFinding(null);
+        setDrawerOpen(false);
+        setWorkspaceView("projects");
+      }
+      await refreshProjects();
+      await refreshFindings(selectedProjectId === project.id ? null : selectedProjectId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete project");
+    } finally {
+      setDeletingProjectId(null);
+    }
   }
 
   async function saveFinding() {
@@ -896,7 +1160,9 @@ export function App() {
   const pageTitle =
     workspaceView === "projects"
       ? "Ward - Mission Control for Security Researchers"
-      : `${selectedProject?.name ?? "findings"}`;
+      : workspaceView === "finding-detail"
+        ? activeFinding?.title ?? selectedProject?.name ?? "finding"
+        : `${selectedProject?.name ?? "findings"}`;
   const severityFilterLabel = filters.severity || "All severities";
   const statusFilterLabel = filters.status || "All statuses";
   const sourceFilterLabel = filters.source || "All sources";
@@ -935,11 +1201,14 @@ export function App() {
         <header className="flex min-h-14 items-center justify-between gap-3 border-b bg-background px-4">
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold">{pageTitle}</h1>
-            {workspaceView === "findings" && selectedProject && (
+            {(workspaceView === "findings" || workspaceView === "finding-detail") && selectedProject && (
               <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 <span className="truncate">
-                  {shortPath(selectedProject.path)}
+                  {projectPathSummary(selectedProject)}
                 </span>
+                {selectedProject.paths.length > 1 && (
+                  <Badge variant="muted">{selectedProject.paths.length} dirs</Badge>
+                )}
                 <span className="inline-flex items-center gap-1">
                   <GitBranch className="h-3 w-3" />
                   {selectedProject.git_branch ?? "No branch"}
@@ -953,29 +1222,43 @@ export function App() {
                   )}
                   {selectedProject.git_dirty ? "dirty" : "clean"}
                 </Badge>
+                {fixReviewSummary(selectedProject) && (
+                  <Badge variant="purple">Fix review: {fixReviewSummary(selectedProject)}</Badge>
+                )}
               </div>
             )}
           </div>
           {workspaceView === "findings" && (
-            <Button
-              variant="outline"
-              onClick={openCreate}
-              disabled={!selectedProject}
-              onMouseEnter={() => setNewFindingHovered(true)}
-              onMouseLeave={() => setNewFindingHovered(false)}
-              className="rounded-full border-border bg-muted text-foreground shadow-none"
-              style={
-                newFindingHovered
-                  ? {
-                      backgroundColor: "#eae6d7",
-                      color: "#100f0f",
-                    }
-                  : undefined
-              }
-            >
-              <Plus className="h-4 w-4" />
-              New finding
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleRequestFixReview}
+                disabled={!selectedProject}
+                className="rounded-full"
+              >
+                <GitBranch className="h-4 w-4" />
+                Request fix review
+              </Button>
+              <Button
+                variant="outline"
+                onClick={openCreate}
+                disabled={!selectedProject}
+                onMouseEnter={() => setNewFindingHovered(true)}
+                onMouseLeave={() => setNewFindingHovered(false)}
+                className="rounded-full border-border bg-muted text-foreground shadow-none"
+                style={
+                  newFindingHovered
+                    ? {
+                        backgroundColor: "#eae6d7",
+                        color: "#100f0f",
+                      }
+                    : undefined
+                }
+              >
+                <Plus className="h-4 w-4" />
+                New finding
+              </Button>
+            </div>
           )}
         </header>
 
@@ -983,8 +1266,77 @@ export function App() {
           <ProjectsPage
             projects={projects}
             selectedProjectId={selectedProjectId}
+            deletingProjectId={deletingProjectId}
             onOpenProject={openProject}
+            onDeleteProject={handleDeleteProject}
           />
+        ) : workspaceView === "finding-detail" && activeFinding ? (
+          <>
+            {error && (
+              <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                {error}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-2 h-7 rounded-full"
+                  onClick={() => setError(null)}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            )}
+            <section className="min-h-0 flex-1 overflow-auto">
+              <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="rounded-full"
+                      onClick={() => setWorkspaceView("findings")}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Back to findings
+                    </Button>
+                    <Badge variant="muted">Detail page</Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full"
+                      onClick={() => toggleDetailSurface("drawer")}
+                    >
+                      <Expand className="h-4 w-4" />
+                      Reopen in drawer
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full"
+                      onClick={() => {
+                        setDrawerMode("edit");
+                        setDrawerOpen(true);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Button>
+                  </div>
+                </div>
+                <div className="rounded-xl border bg-popover p-5 shadow-sm">
+                  <FindingDetailBody
+                    finding={activeFinding}
+                    copiedKey={copiedKey}
+                    onCopy={copySection}
+                    onUpdateStatus={updateStatus}
+                    codePreviews={codePreviews}
+                    codeLoading={codeLoading}
+                  />
+                </div>
+              </div>
+            </section>
+          </>
         ) : (
           <>
             <section className="border-b bg-popover px-4 py-3">
@@ -1127,10 +1479,62 @@ export function App() {
               ) : (
                 <div className="divide-y">
                   <div className="hidden grid-cols-[minmax(220px,1fr)_104px_104px_92px_minmax(160px,240px)] gap-2 bg-popover px-4 py-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground md:grid">
-                    <span>Finding</span>
-                    <span className="text-center">Severity</span>
-                    <span className="text-center">Status</span>
-                    <span className="text-center">Source</span>
+                    <SortHeader
+                      label="Finding"
+                      active={sortState.sort_by === "created_at"}
+                      direction={sortState.sort_dir}
+                      onClick={() =>
+                        setSortState((current) => ({
+                          sort_by: "created_at",
+                          sort_dir:
+                            current.sort_by === "created_at" && current.sort_dir === "desc"
+                              ? "asc"
+                              : "desc",
+                        }))
+                      }
+                    />
+                    <SortHeader
+                      label="Severity"
+                      active={sortState.sort_by === "severity"}
+                      direction={sortState.sort_dir}
+                      onClick={() =>
+                        setSortState((current) => ({
+                          sort_by: "severity",
+                          sort_dir:
+                            current.sort_by === "severity" && current.sort_dir === "desc"
+                              ? "asc"
+                              : "desc",
+                        }))
+                      }
+                    />
+                    <SortHeader
+                      label="Status"
+                      active={sortState.sort_by === "status"}
+                      direction={sortState.sort_dir}
+                      onClick={() =>
+                        setSortState((current) => ({
+                          sort_by: "status",
+                          sort_dir:
+                            current.sort_by === "status" && current.sort_dir === "desc"
+                              ? "asc"
+                              : "desc",
+                        }))
+                      }
+                    />
+                    <SortHeader
+                      label="Source"
+                      active={sortState.sort_by === "source"}
+                      direction={sortState.sort_dir}
+                      onClick={() =>
+                        setSortState((current) => ({
+                          sort_by: "source",
+                          sort_dir:
+                            current.sort_by === "source" && current.sort_dir === "desc"
+                              ? "asc"
+                              : "desc",
+                        }))
+                      }
+                    />
                     <span>File</span>
                   </div>
                   {findings.map((finding) => (
@@ -1181,25 +1585,56 @@ export function App() {
       </main>
 
       <Dialog open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DialogContent className="drawer-content">
+        <DialogContent className="drawer-content" style={drawerStyle}>
+          {drawerMode === "view" && activeDetailSurface === "drawer" && (
+            <button
+              type="button"
+              aria-label="Resize drawer"
+              className="absolute left-0 top-0 z-10 hidden h-full w-2 -translate-x-1/2 cursor-col-resize bg-transparent lg:block"
+              onPointerDown={handleDrawerResizeStart}
+            >
+              <span className="sr-only">Resize drawer</span>
+            </button>
+          )}
           <DialogHeader>
             {drawerMode === "view" && activeFinding ? (
-              <DialogTitle asChild>
-                <button
-                  type="button"
-                  className="group flex max-w-full items-center gap-2 pr-8 text-left text-base font-semibold opacity-90 transition-opacity duration-150 hover:opacity-100"
-                  onClick={() =>
-                    copySection("drawer-title", activeFinding.title)
-                  }
-                >
-                  <span className="truncate">{drawerTitle}</span>
-                  {copiedKey === "drawer-title" ? (
-                    <Check className="h-3.5 w-3.5 shrink-0 text-green-700" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-60" />
-                  )}
-                </button>
-              </DialogTitle>
+              <div className="flex items-start justify-between gap-3 pr-8">
+                <DialogTitle asChild>
+                  <button
+                    type="button"
+                    className="group flex max-w-full items-center gap-2 text-left text-base font-semibold opacity-90 transition-opacity duration-150 hover:opacity-100"
+                    onClick={() =>
+                      copySection("drawer-title", activeFinding.title)
+                    }
+                  >
+                    <span className="truncate">{drawerTitle}</span>
+                    {copiedKey === "drawer-title" ? (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-green-700" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-60" />
+                    )}
+                  </button>
+                </DialogTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant={detailSurface === "drawer" ? "secondary" : "ghost"}
+                    className="rounded-full"
+                    onClick={() => toggleDetailSurface("drawer")}
+                  >
+                    Drawer
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={detailSurface === "page" ? "secondary" : "ghost"}
+                    className="rounded-full"
+                    onClick={() => toggleDetailSurface("page")}
+                  >
+                    <Expand className="h-4 w-4" />
+                    Page
+                  </Button>
+                </div>
+              </div>
             ) : (
               <DialogTitle>{drawerTitle}</DialogTitle>
             )}
@@ -1214,68 +1649,14 @@ export function App() {
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             {drawerMode === "view" && activeFinding ? (
-              <>
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                  <SeverityBadge severity={activeFinding.severity} />
-                  <StatusBadge status={activeFinding.status} />
-                  <Badge variant={sourceVariant(activeFinding.source)}>
-                    {activeFinding.source}
-                  </Badge>
-                  <div className="ml-auto w-36">
-                    <Select
-                      value={activeFinding.status}
-                      onValueChange={(value: Status) => updateStatus(value)}
-                    >
-                      <SelectTrigger className="h-8 rounded-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {statuses.map((status) => (
-                          <SelectItem key={status} value={status}>
-                            {status}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <FindingMetadataRow
-                  fileRefs={activeFinding.file_refs
-                    .map(fileRefToText)
-                    .join("\n")}
-                  category={activeFinding.category}
-                  copiedKey={copiedKey}
-                  onCopy={copySection}
-                />
-                <FieldBlock
-                  label="Description"
-                  value={activeFinding.description}
-                  copyKey="description"
-                  copiedKey={copiedKey}
-                  onCopy={copySection}
-                  multiline
-                />
-                <FieldBlock
-                  label="Impact"
-                  value={activeFinding.impact}
-                  copyKey="impact"
-                  copiedKey={copiedKey}
-                  onCopy={copySection}
-                  multiline
-                />
-                <FieldBlock
-                  label="Recommendation"
-                  value={activeFinding.recommendation}
-                  copyKey="recommendation"
-                  copiedKey={copiedKey}
-                  onCopy={copySection}
-                  multiline
-                />
-                <CodePreviewBlocks
-                  previews={codePreviews}
-                  loading={codeLoading}
-                />
-              </>
+              <FindingDetailBody
+                finding={activeFinding}
+                copiedKey={copiedKey}
+                onCopy={copySection}
+                onUpdateStatus={updateStatus}
+                codePreviews={codePreviews}
+                codeLoading={codeLoading}
+              />
             ) : (
               <FindingForm value={formValue} setValue={setFormValue} />
             )}

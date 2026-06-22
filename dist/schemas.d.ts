@@ -16,6 +16,16 @@ export declare const statusSchema: z.ZodEnum<{
     invalid: "invalid";
     reported: "reported";
 }>;
+export declare const findingSortBySchema: z.ZodEnum<{
+    created_at: "created_at";
+    severity: "severity";
+    status: "status";
+    source: "source";
+}>;
+export declare const sortDirectionSchema: z.ZodEnum<{
+    asc: "asc";
+    desc: "desc";
+}>;
 export declare const fileRefSchema: z.ZodObject<{
     path: z.ZodString;
     start_line: z.ZodOptional<z.ZodNumber>;
@@ -25,13 +35,23 @@ export declare const projectOutSchema: z.ZodObject<{
     id: z.ZodString;
     name: z.ZodString;
     path: z.ZodString;
+    paths: z.ZodArray<z.ZodString>;
     git_remote_url: z.ZodNullable<z.ZodString>;
     git_branch: z.ZodNullable<z.ZodString>;
     git_commit_hash: z.ZodNullable<z.ZodString>;
     git_dirty: z.ZodBoolean;
+    review_base_commit_hash: z.ZodNullable<z.ZodString>;
+    fix_review_commit_hash: z.ZodNullable<z.ZodString>;
+    fix_review_requested_at: z.ZodNullable<z.ZodString>;
     created_at: z.ZodString;
     updated_at: z.ZodString;
 }, z.core.$strip>;
+export declare const projectAddPathsSchema: z.ZodObject<{
+    paths: z.ZodArray<z.ZodString>;
+}, z.core.$strip>;
+export declare const projectFixReviewRequestSchema: z.ZodObject<{
+    commit_hash: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>;
 export declare const findingCreateSchema: z.ZodObject<{
     title: z.ZodString;
     severity: z.ZodDefault<z.ZodEnum<{
@@ -134,8 +154,12 @@ export declare const codePreviewSchema: z.ZodObject<{
 export type Severity = z.infer<typeof severitySchema>;
 export type Source = z.infer<typeof sourceSchema>;
 export type Status = z.infer<typeof statusSchema>;
+export type FindingSortBy = z.infer<typeof findingSortBySchema>;
+export type SortDirection = z.infer<typeof sortDirectionSchema>;
 export type FileRef = z.infer<typeof fileRefSchema>;
 export type ProjectOut = z.infer<typeof projectOutSchema>;
+export type ProjectAddPaths = z.infer<typeof projectAddPathsSchema>;
+export type ProjectFixReviewRequest = z.infer<typeof projectFixReviewRequestSchema>;
 export type FindingCreate = z.infer<typeof findingCreateSchema>;
 export type FindingUpdate = z.infer<typeof findingUpdateSchema>;
 export type FindingOut = z.infer<typeof findingOutSchema>;

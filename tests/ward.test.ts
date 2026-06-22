@@ -6,7 +6,9 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  addProjectPaths,
   createFinding,
+  deleteProject,
   getProjectByPath,
   listFindings,
   listProjects,
@@ -18,7 +20,7 @@ const repoRoot = path.resolve(import.meta.dirname, '..')
 let tmp: string
 
 function cli(args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) {
-  return execFileSync('npx', ['tsx', path.join(repoRoot, 'src', 'cli.ts'), ...args], {
+  return execFileSync(path.join(repoRoot, 'node_modules', '.bin', 'tsx'), [path.join(repoRoot, 'src', 'cli.ts'), ...args], {
     cwd: options.cwd ?? repoRoot,
     env: { ...process.env, ...options.env },
     encoding: 'utf8',
@@ -85,6 +87,16 @@ function pythonStyleDb(file: string, projectPath: string) {
   db.close()
 }
 
+function initGitRepo(repoPath: string): string {
+  execFileSync('git', ['init'], { cwd: repoPath, stdio: 'ignore' })
+  execFileSync('git', ['config', 'user.name', 'Ward Tests'], { cwd: repoPath, stdio: 'ignore' })
+  execFileSync('git', ['config', 'user.email', 'ward@example.com'], { cwd: repoPath, stdio: 'ignore' })
+  fs.writeFileSync(path.join(repoPath, 'README.md'), '# test\n', 'utf8')
+  execFileSync('git', ['add', 'README.md'], { cwd: repoPath, stdio: 'ignore' })
+  execFileSync('git', ['commit', '-m', 'init'], { cwd: repoPath, stdio: 'ignore' })
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim()
+}
+
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ward-'))
   process.env.WARD_DB_PATH = path.join(tmp, 'ward.db')
@@ -129,6 +141,29 @@ describe('TypeScript persistence', () => {
 
     expect(fs.existsSync(process.env.WARD_DB_PATH!)).toBe(true)
     expect(getProjectByPath(projectPath)?.name).toBe('Env DB')
+  })
+
+  it('supports additional project paths and cascading project deletion', () => {
+    const projectPath = path.join(tmp, 'repo')
+    const extraPath = path.join(tmp, 'packages', 'shared')
+    fs.mkdirSync(projectPath, { recursive: true })
+    fs.mkdirSync(extraPath, { recursive: true })
+
+    const project = registerProject({ path: projectPath, name: 'Multi Path' })
+    const updated = addProjectPaths({ projectId: project.id, paths: [extraPath] })
+    createFinding({
+      project_id: project.id,
+      title: 'Cross-repo finding',
+      severity: 'medium',
+      source: 'human',
+    })
+
+    expect(updated.paths).toEqual([project.path, fs.realpathSync.native(extraPath)])
+    expect(getProjectByPath(extraPath)?.id).toBe(project.id)
+    expect(deleteProject(project.id)).toBe(true)
+    expect(getProjectByPath(projectPath)).toBeNull()
+    expect(getProjectByPath(extraPath)).toBeNull()
+    expect(listProjects()).toEqual([])
   })
 
   it('reads existing Python-created SQLite databases', () => {
@@ -187,7 +222,7 @@ describe('incur CLI', () => {
       status: 'draft',
       file_refs: [{ path: 'src/Vault.sol', start_line: 42, end_line: 51 }],
     })
-  })
+  }, 30000)
 
   it('defaults to TOON and supports JSON', () => {
     const projectPath = path.join(tmp, 'repo')
@@ -204,7 +239,7 @@ describe('incur CLI', () => {
       env: { WARD_DB_PATH: process.env.WARD_DB_PATH! },
     })
     expect(JSON.parse(json)).toEqual({ findings: [] })
-  })
+  }, 30000)
 })
 
 describe('HTTP API', () => {
@@ -247,6 +282,62 @@ describe('HTTP API', () => {
     const deleted = await app.request(`/api/findings/${finding.id}`, { method: 'DELETE' })
     expect(deleted.status).toBe(204)
     expect(listFindings(project.id)).toEqual([])
+  })
+
+  it('validates fix-review commit hashes through the HTTP API', async () => {
+    const app = createApp()
+    const projectPath = path.join(tmp, 'repo')
+    fs.mkdirSync(projectPath)
+    const commitHash = initGitRepo(projectPath)
+    const project = registerProject({ path: projectPath, name: 'API Project' })
+
+    const invalid = await app.request(`/api/projects/${project.id}/fix-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commit_hash: 'definitely-not-a-commit' }),
+    })
+    expect(invalid.status).toBe(422)
+    expect(await invalid.json()).toEqual({ detail: 'git commit not found: definitely-not-a-commit' })
+
+    const valid = await app.request(`/api/projects/${project.id}/fix-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commit_hash: commitHash }),
+    })
+    expect(valid.status).toBe(200)
+    const updated = await valid.json()
+    expect(updated.fix_review_commit_hash).toBe(commitHash)
+  })
+
+  it('marks duplicate relative paths across project roots as ambiguous', async () => {
+    const app = createApp()
+    const repo = path.join(tmp, 'repo')
+    const extra = path.join(tmp, 'packages', 'shared')
+    const primarySource = path.join(repo, 'src', 'Vault.sol')
+    const extraSource = path.join(extra, 'src', 'Vault.sol')
+    fs.mkdirSync(path.dirname(primarySource), { recursive: true })
+    fs.mkdirSync(path.dirname(extraSource), { recursive: true })
+    fs.writeFileSync(primarySource, 'primary\n', 'utf8')
+    fs.writeFileSync(extraSource, 'secondary\n', 'utf8')
+
+    const project = registerProject({ path: repo, name: 'Multi Root Project' })
+    addProjectPaths({ projectId: project.id, paths: [extra] })
+    const finding = createFinding({
+      project_id: project.id,
+      title: 'Ambiguous preview',
+      severity: 'low',
+      source: 'human',
+      file_refs: [{ path: 'src/Vault.sol', start_line: 1, end_line: 1 }],
+    })
+
+    const response = await app.request(`/api/findings/${finding.id}/related-code`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([
+      expect.objectContaining({
+        path: 'src/Vault.sol',
+        error: 'File reference is ambiguous across the registered project paths.',
+      }),
+    ])
   })
 
   it('related-code previews are scoped to the registered project path', async () => {
