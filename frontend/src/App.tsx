@@ -933,7 +933,12 @@ export function App() {
   const [sortState, setSortState] = useState<SortState>([
     { sort_by: "created_at", sort_dir: "desc" },
   ]);
-  const [drawerWidth, setDrawerWidth] = useState(820);
+  const [drawerWidth, setDrawerWidth] = useState(() =>
+    Math.max(
+      drawerWidthBounds.min,
+      Math.min(drawerWidthBounds.max, Math.round(window.innerWidth * 0.5)),
+    ),
+  );
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -1042,6 +1047,7 @@ export function App() {
     setActiveFinding(null);
     setFormValue(emptyPayload);
     setDrawerMode("create");
+    setDetailSurface("drawer");
     setWorkspaceView("findings");
     setDrawerOpen(true);
   }
@@ -1050,16 +1056,14 @@ export function App() {
     setActiveFinding(finding);
     setFormValue(findingToPayload(finding));
     setDrawerMode("view");
-    if (detailSurface === "page") {
-      setWorkspaceView("finding-detail");
-      setDrawerOpen(false);
-      return;
-    }
+    setDetailSurface("drawer");
+    setWorkspaceView("findings");
     setDrawerOpen(true);
   }
 
   function openProject(projectId: string) {
     setSelectedProjectId(projectId);
+    setDetailSurface("drawer");
     setWorkspaceView("findings");
     setDrawerOpen(false);
   }
@@ -1319,7 +1323,10 @@ export function App() {
                       type="button"
                       variant="ghost"
                       className="rounded-full"
-                      onClick={() => setWorkspaceView("findings")}
+                      onClick={() => {
+                        setDetailSurface("drawer");
+                        setWorkspaceView("findings");
+                      }}
                     >
                       <ChevronLeft className="h-4 w-4" />
                       Back to findings
