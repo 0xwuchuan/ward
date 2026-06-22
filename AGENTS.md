@@ -40,4 +40,5 @@ The app opens at `http://127.0.0.1:5173`, with the backend on `http://127.0.0.1:
 - Backend/CLI/API tests: run `npm test`.
 - Frontend typecheck/build and TypeScript compile: run `npm run build`.
 - Full-stack verification: run the backend and frontend together with `npm run dev -- start` and verify the workflow in the browser.
+- Use `agent-browser` for browser automation, UI smoke tests, screenshots, and local app verification. Before using it, load its current workflow with `agent-browser skills get core`.
 - If a change cannot be tested locally, document the exact blocker and risk before handing it off.

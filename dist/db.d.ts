@@ -35,6 +35,10 @@ export declare function requestFixReview(options: {
     gitMetadata?: Partial<GitMetadata> | null;
     db?: Sqlite;
 }): ProjectOut;
+export declare function clearFixReview(options: {
+    projectId: string;
+    db?: Sqlite;
+}): ProjectOut;
 export declare function deleteProject(projectId: string, db?: Sqlite): boolean;
 export declare function createFinding(options: {
     project_id: string;

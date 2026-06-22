@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowUpDown,
+  ArrowUp,
   ChartNoAxesColumn,
   Check,
   CheckCircle2,
@@ -17,6 +19,7 @@ import {
   Search,
   Trash2,
   UsersRound,
+  X,
 } from "lucide-react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -37,6 +40,7 @@ import {
 } from "./components/ui/select";
 import { Textarea } from "./components/ui/textarea";
 import {
+  clearFixReview,
   createFinding,
   deleteFinding,
   deleteProject,
@@ -57,6 +61,7 @@ import type {
   Severity,
   Source,
   SortDirection,
+  SortRule,
   Status,
 } from "./types";
 
@@ -76,10 +81,7 @@ type Filters = {
   source: string;
 };
 
-type SortState = {
-  sort_by: FindingSortBy;
-  sort_dir: SortDirection;
-};
+type SortState = SortRule[];
 
 const emptyPayload: FindingPayload = {
   title: "",
@@ -305,16 +307,29 @@ function highlightLine(line: string) {
   return parts.length ? parts : " ";
 }
 
-function CopyAffordance({ label, copied }: { label: string; copied: boolean }) {
+function CopyAffordance({
+  label,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
   return (
-    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/copy:opacity-70 group-focus-visible/copy:opacity-70">
+    <button
+      type="button"
+      aria-label={`Copy ${label}`}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 outline-none transition-opacity duration-150 hover:bg-accent hover:text-accent-foreground hover:opacity-100 focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/copy:opacity-70 group-focus-within/copy:opacity-100"
+      onClick={onCopy}
+    >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-green-700 opacity-100" />
       ) : (
         <Copy className="h-3.5 w-3.5" />
       )}
       <span className="sr-only">Copy {label}</span>
-    </span>
+    </button>
   );
 }
 
@@ -335,26 +350,17 @@ function FieldBlock({
   multiline?: boolean;
   valueClassName?: string;
 }) {
-  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onCopy(copyKey, value);
-    }
-  }
-
   return (
-    <section
-      role="button"
-      tabIndex={0}
-      className="group/copy cursor-copy border-t py-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => onCopy(copyKey, value)}
-      onKeyDown={handleKeyDown}
-    >
+    <section className="group/copy border-t py-4">
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
           {label}
         </h3>
-        <CopyAffordance label={label} copied={copiedKey === copyKey} />
+        <CopyAffordance
+          label={label}
+          copied={copiedKey === copyKey}
+          onCopy={() => onCopy(copyKey, value)}
+        />
       </div>
       <p
         className={cn(
@@ -384,26 +390,17 @@ function MetadataCopyItem({
   onCopy: (key: string, value: string) => void;
   valueClassName?: string;
 }) {
-  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onCopy(copyKey, value);
-    }
-  }
-
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className="group/copy min-w-0 cursor-copy outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => onCopy(copyKey, value)}
-      onKeyDown={handleKeyDown}
-    >
+    <div className="group/copy min-w-0">
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
           {label}
         </h3>
-        <CopyAffordance label={label} copied={copiedKey === copyKey} />
+        <CopyAffordance
+          label={label}
+          copied={copiedKey === copyKey}
+          onCopy={() => onCopy(copyKey, value)}
+        />
       </div>
       <p className={valueClassName}>{value || "Not provided"}</p>
     </div>
@@ -714,14 +711,14 @@ function ProjectsPage({
               <div
                 key={project.id}
                 className={cn(
-                  "grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-[minmax(180px,1fr)_minmax(220px,1.4fr)_120px_120px_auto] md:items-center",
+                  "grid grid-cols-[minmax(0,1fr)_2.5rem] gap-3 px-4 py-3 md:items-center",
                   selectedProjectId === project.id && "bg-accent",
                 )}
               >
                 <button
                   type="button"
                   onClick={() => onOpenProject(project.id)}
-                  className="grid min-w-0 grid-cols-1 gap-2 text-left transition-colors hover:text-foreground md:col-span-4 md:grid-cols-[subgrid] md:items-center"
+                  className="grid min-w-0 grid-cols-1 gap-2 text-left transition-colors hover:text-foreground md:grid-cols-[minmax(160px,0.9fr)_minmax(220px,1.5fr)_minmax(96px,120px)_minmax(170px,auto)] md:items-center"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">
@@ -746,7 +743,7 @@ function ProjectsPage({
                       {project.git_branch ?? "No branch"}
                     </span>
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {project.fix_review_commit_hash && (
                       <Badge variant="purple">Fix review</Badge>
                     )}
@@ -758,12 +755,12 @@ function ProjectsPage({
                       )}
                       {project.git_dirty ? "dirty" : "clean"}
                     </Badge>
-                    <span className="font-mono text-xs text-muted-foreground">
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
                       {shortCommit(project.git_commit_hash)}
                     </span>
                   </div>
                 </button>
-                <div className="flex items-center justify-end gap-2 md:justify-self-end">
+                <div className="flex items-center justify-end">
                   <Button
                     type="button"
                     variant="ghost"
@@ -788,18 +785,25 @@ function ProjectsPage({
 
 function SortHeader({
   label,
-  active,
+  priority,
   direction,
   onClick,
 }: {
   label: string;
-  active: boolean;
-  direction: SortDirection;
+  priority?: number;
+  direction?: SortDirection;
   onClick: () => void;
 }) {
+  const active = direction !== undefined;
+  const SortIcon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
   return (
     <button
       type="button"
+      aria-label={
+        active
+          ? `${label} sorted ${direction}${priority ? `, priority ${priority}` : ""}`
+          : `Sort by ${label}`
+      }
       className={cn(
         "inline-flex items-center justify-center gap-1 rounded-full px-2 py-1 text-xs transition-colors hover:bg-muted/70",
         active && "bg-muted text-foreground",
@@ -807,8 +811,7 @@ function SortHeader({
       onClick={onClick}
     >
       <span>{label}</span>
-      <ArrowUpDown className="h-3 w-3" />
-      {active && <span className="text-[10px] uppercase">{direction}</span>}
+      <SortIcon className="h-3 w-3" />
     </button>
   );
 }
@@ -884,6 +887,25 @@ function FindingDetailBody({
   );
 }
 
+function sortRuleFor(sortState: SortState, sortBy: FindingSortBy) {
+  const index = sortState.findIndex((sort) => sort.sort_by === sortBy);
+  return index === -1 ? null : { index, rule: sortState[index]! };
+}
+
+function updateSortState(sortState: SortState, sortBy: FindingSortBy): SortState {
+  const existing = sortRuleFor(sortState, sortBy);
+  if (!existing) return [...sortState, { sort_by: sortBy, sort_dir: "desc" }];
+  if (existing.rule.sort_dir === "desc") {
+    return sortState.map((sort) =>
+      sort.sort_by === sortBy ? { ...sort, sort_dir: "asc" } : sort,
+    );
+  }
+  if (sortState.length > 1) {
+    return sortState.filter((sort) => sort.sort_by !== sortBy);
+  }
+  return [{ sort_by: sortBy, sort_dir: "desc" }];
+}
+
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
@@ -908,10 +930,9 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [newFindingHovered, setNewFindingHovered] = useState(false);
-  const [sortState, setSortState] = useState<SortState>({
-    sort_by: "created_at",
-    sort_dir: "desc",
-  });
+  const [sortState, setSortState] = useState<SortState>([
+    { sort_by: "created_at", sort_dir: "desc" },
+  ]);
   const [drawerWidth, setDrawerWidth] = useState(820);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -942,7 +963,7 @@ export function App() {
     }
     const nextFindings = await listFindings(projectId, {
       ...filters,
-      ...sortState,
+      sort: sortState,
     });
     setFindings(nextFindings);
   }
@@ -961,8 +982,7 @@ export function App() {
     filters.severity,
     filters.status,
     filters.source,
-    sortState.sort_by,
-    sortState.sort_dir,
+    sortState,
   ]);
 
   useEffect(() => {
@@ -1065,12 +1085,14 @@ export function App() {
     if (!selectedProject) return;
     try {
       setError(null);
-      const updated = await requestFixReview(selectedProject.id);
+      const updated = selectedProject.fix_review_commit_hash
+        ? await clearFixReview(selectedProject.id)
+        : await requestFixReview(selectedProject.id);
       setProjects((current) =>
         current.map((project) => (project.id === updated.id ? updated : project)),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to request fix review");
+      setError(err instanceof Error ? err.message : "Unable to update fix review");
     }
   }
 
@@ -1159,6 +1181,17 @@ export function App() {
   const severityFilterLabel = filters.severity || "All severities";
   const statusFilterLabel = filters.status || "All statuses";
   const sourceFilterLabel = filters.source || "All sources";
+  const renderSortHeader = (label: string, sortBy: FindingSortBy) => {
+    const activeSort = sortRuleFor(sortState, sortBy);
+    return (
+      <SortHeader
+        label={label}
+        priority={activeSort ? activeSort.index + 1 : undefined}
+        direction={activeSort?.rule.sort_dir}
+        onClick={() => setSortState((current) => updateSortState(current, sortBy))}
+      />
+    );
+  };
 
   useEffect(() => {
     document.title = pageTitle;
@@ -1230,7 +1263,7 @@ export function App() {
                 className="rounded-full"
               >
                 <GitBranch className="h-4 w-4" />
-                Request fix review
+                {selectedProject?.fix_review_commit_hash ? "Clear fix review" : "Request fix review"}
               </Button>
               <Button
                 variant="outline"
@@ -1266,12 +1299,12 @@ export function App() {
         ) : workspaceView === "finding-detail" && activeFinding ? (
           <>
             {error && (
-              <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-                {error}
+              <div className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                <span className="min-w-0 flex-1">{error}</span>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="ml-2 h-7 rounded-full"
+                  className="h-7 shrink-0 rounded-full"
                   onClick={() => setError(null)}
                 >
                   Dismiss
@@ -1291,18 +1324,8 @@ export function App() {
                       <ChevronLeft className="h-4 w-4" />
                       Back to findings
                     </Button>
-                    <Badge variant="muted">Detail page</Badge>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="rounded-full"
-                      onClick={() => toggleDetailSurface("drawer")}
-                    >
-                      <Expand className="h-4 w-4" />
-                      Reopen in drawer
-                    </Button>
                     <Button
                       type="button"
                       variant="outline"
@@ -1436,12 +1459,12 @@ export function App() {
             </section>
 
             {error && (
-              <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
-                {error}
+              <div className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                <span className="min-w-0 flex-1">{error}</span>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="ml-2 h-7 rounded-full"
+                  className="h-7 shrink-0 rounded-full"
                   onClick={() => setError(null)}
                 >
                   Dismiss
@@ -1449,7 +1472,7 @@ export function App() {
               </div>
             )}
 
-            <section className="min-h-0 flex-1 overflow-auto">
+            <section className="min-h-0 flex-1 overflow-hidden">
               {loading ? (
                 <div className="p-6 text-sm text-muted-foreground">
                   Loading workspace...
@@ -1470,106 +1493,145 @@ export function App() {
                   .
                 </div>
               ) : (
-                <div className="divide-y">
-                  <div className="hidden grid-cols-[minmax(220px,1fr)_104px_104px_92px_minmax(160px,240px)] gap-2 bg-popover px-4 py-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground md:grid">
-                    <SortHeader
-                      label="Finding"
-                      active={sortState.sort_by === "created_at"}
-                      direction={sortState.sort_dir}
-                      onClick={() =>
-                        setSortState((current) => ({
-                          sort_by: "created_at",
-                          sort_dir:
-                            current.sort_by === "created_at" && current.sort_dir === "desc"
-                              ? "asc"
-                              : "desc",
-                        }))
-                      }
-                    />
-                    <SortHeader
-                      label="Severity"
-                      active={sortState.sort_by === "severity"}
-                      direction={sortState.sort_dir}
-                      onClick={() =>
-                        setSortState((current) => ({
-                          sort_by: "severity",
-                          sort_dir:
-                            current.sort_by === "severity" && current.sort_dir === "desc"
-                              ? "asc"
-                              : "desc",
-                        }))
-                      }
-                    />
-                    <SortHeader
-                      label="Status"
-                      active={sortState.sort_by === "status"}
-                      direction={sortState.sort_dir}
-                      onClick={() =>
-                        setSortState((current) => ({
-                          sort_by: "status",
-                          sort_dir:
-                            current.sort_by === "status" && current.sort_dir === "desc"
-                              ? "asc"
-                              : "desc",
-                        }))
-                      }
-                    />
-                    <SortHeader
-                      label="Source"
-                      active={sortState.sort_by === "source"}
-                      direction={sortState.sort_dir}
-                      onClick={() =>
-                        setSortState((current) => ({
-                          sort_by: "source",
-                          sort_dir:
-                            current.sort_by === "source" && current.sort_dir === "desc"
-                              ? "asc"
-                              : "desc",
-                        }))
-                      }
-                    />
-                    <span>File</span>
-                  </div>
-                  {findings.map((finding) => (
-                    <button
-                      key={finding.id}
-                      type="button"
-                      onClick={() => openFinding(finding)}
-                      className="grid w-full grid-cols-1 gap-2 px-4 py-3 text-left transition-colors duration-150 hover:bg-muted md:grid-cols-[minmax(220px,1fr)_104px_104px_92px_minmax(160px,240px)] md:items-center"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {finding.title}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground md:hidden">
-                          <SeverityBadge severity={finding.severity} />
-                          <StatusBadge status={finding.status} />
-                          <Badge variant={sourceVariant(finding.source)}>
+                <div className="flex h-full min-h-0 flex-col lg:flex-row">
+                  <div className="min-h-0 flex-1 overflow-auto">
+                    <div className="divide-y">
+                      <div className="hidden grid-cols-[minmax(220px,1fr)_104px_104px_92px] gap-2 bg-popover px-4 py-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground md:grid">
+                        {renderSortHeader("Finding", "created_at")}
+                        {renderSortHeader("Severity", "severity")}
+                        {renderSortHeader("Status", "status")}
+                        {renderSortHeader("Source", "source")}
+                      </div>
+                      {findings.map((finding) => (
+                        <button
+                          key={finding.id}
+                          type="button"
+                          onClick={() => openFinding(finding)}
+                          className={cn(
+                            "grid w-full grid-cols-1 gap-2 px-4 py-3 text-left transition-colors duration-150 hover:bg-muted md:grid-cols-[minmax(220px,1fr)_104px_104px_92px] md:items-center",
+                            activeFinding?.id === finding.id &&
+                              drawerOpen &&
+                              drawerMode === "view" &&
+                              activeDetailSurface === "drawer" &&
+                              "bg-muted",
+                          )}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">
+                              {finding.title}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground md:hidden">
+                              <SeverityBadge severity={finding.severity} />
+                              <StatusBadge status={finding.status} />
+                              <Badge variant={sourceVariant(finding.source)}>
+                                {finding.source}
+                              </Badge>
+                            </div>
+                          </div>
+                          <SeverityBadge
+                            className="hidden justify-self-center md:inline-flex"
+                            severity={finding.severity}
+                          />
+                          <StatusBadge
+                            className="hidden justify-self-center md:inline-flex"
+                            status={finding.status}
+                          />
+                          <Badge
+                            className="hidden justify-self-center md:inline-flex"
+                            variant={sourceVariant(finding.source)}
+                          >
                             {finding.source}
                           </Badge>
-                        </div>
-                      </div>
-                      <SeverityBadge
-                        className="hidden justify-self-center md:inline-flex"
-                        severity={finding.severity}
-                      />
-                      <StatusBadge
-                        className="hidden justify-self-center md:inline-flex"
-                        status={finding.status}
-                      />
-                      <Badge
-                        className="hidden justify-self-center md:inline-flex"
-                        variant={sourceVariant(finding.source)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {drawerOpen &&
+                    drawerMode === "view" &&
+                    activeDetailSurface === "drawer" &&
+                    activeFinding && (
+                      <aside
+                        className="relative flex min-h-0 shrink-0 flex-col border-t bg-popover text-popover-foreground shadow-sm lg:h-full lg:border-l lg:border-t-0"
+                        style={drawerStyle}
                       >
-                        {finding.source}
-                      </Badge>
-                      <span className="hidden truncate font-mono text-xs text-muted-foreground md:block">
-                        {finding.file_refs[0]
-                          ? fileRefToText(finding.file_refs[0])
-                          : "no file ref"}
-                      </span>
-                    </button>
-                  ))}
+                        <button
+                          type="button"
+                          aria-label="Resize drawer"
+                          className="absolute left-0 top-0 z-10 hidden h-full w-2 -translate-x-1/2 cursor-col-resize bg-transparent lg:block"
+                          onPointerDown={handleDrawerResizeStart}
+                        >
+                          <span className="sr-only">Resize drawer</span>
+                        </button>
+                        <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+                          <button
+                            type="button"
+                            className="group flex min-h-9 min-w-0 items-center gap-2 text-left text-base font-semibold opacity-90 transition-opacity duration-150 hover:opacity-100"
+                            onClick={() =>
+                              copySection("drawer-title", activeFinding.title)
+                            }
+                          >
+                            <span className="truncate">{drawerTitle}</span>
+                            {copiedKey === "drawer-title" ? (
+                              <Check className="h-3.5 w-3.5 shrink-0 text-green-700" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-60" />
+                            )}
+                          </button>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Button
+                              type="button"
+                              variant={detailSurface === "page" ? "secondary" : "ghost"}
+                              size="icon"
+                              className="rounded-full"
+                              aria-label="Open detail page"
+                              onClick={() => toggleDetailSurface("page")}
+                            >
+                              <Expand className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="rounded-full"
+                              onClick={() => setDrawerOpen(false)}
+                            >
+                              <X className="h-4 w-4" />
+                              <span className="sr-only">Close</span>
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                          <FindingDetailBody
+                            finding={activeFinding}
+                            copiedKey={copiedKey}
+                            onCopy={copySection}
+                            onUpdateStatus={updateStatus}
+                            codePreviews={codePreviews}
+                            codeLoading={codeLoading}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 border-t px-5 py-3">
+                          <Button
+                            variant="outline"
+                            className="rounded-full"
+                            onClick={() => setDrawerMode("edit")}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="rounded-full text-red-700 hover:text-red-700"
+                            onClick={removeFinding}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </Button>
+                        </div>
+                      </aside>
+                    )}
                 </div>
               )}
             </section>
@@ -1577,129 +1639,45 @@ export function App() {
         )}
       </main>
 
-      <Dialog open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DialogContent className="drawer-content" style={drawerStyle}>
-          {drawerMode === "view" && activeDetailSurface === "drawer" && (
-            <button
-              type="button"
-              aria-label="Resize drawer"
-              className="absolute left-0 top-0 z-10 hidden h-full w-2 -translate-x-1/2 cursor-col-resize bg-transparent lg:block"
-              onPointerDown={handleDrawerResizeStart}
-            >
-              <span className="sr-only">Resize drawer</span>
-            </button>
-          )}
-          <DialogHeader>
-            {drawerMode === "view" && activeFinding ? (
-              <div className="flex items-start justify-between gap-3 pr-8">
-                <DialogTitle asChild>
-                  <button
-                    type="button"
-                    className="group flex max-w-full items-center gap-2 text-left text-base font-semibold opacity-90 transition-opacity duration-150 hover:opacity-100"
-                    onClick={() =>
-                      copySection("drawer-title", activeFinding.title)
-                    }
-                  >
-                    <span className="truncate">{drawerTitle}</span>
-                    {copiedKey === "drawer-title" ? (
-                      <Check className="h-3.5 w-3.5 shrink-0 text-green-700" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-60" />
-                    )}
-                  </button>
-                </DialogTitle>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant={detailSurface === "drawer" ? "secondary" : "ghost"}
-                    className="rounded-full"
-                    onClick={() => toggleDetailSurface("drawer")}
-                  >
-                    Drawer
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={detailSurface === "page" ? "secondary" : "ghost"}
-                    className="rounded-full"
-                    onClick={() => toggleDetailSurface("page")}
-                  >
-                    <Expand className="h-4 w-4" />
-                    Page
-                  </Button>
-                </div>
-              </div>
-            ) : (
+      {drawerMode !== "view" && (
+        <Dialog open={drawerOpen} onOpenChange={setDrawerOpen}>
+          <DialogContent className="drawer-content" style={drawerStyle}>
+            <DialogHeader>
               <DialogTitle>{drawerTitle}</DialogTitle>
-            )}
-            {drawerMode !== "view" && (
               <DialogDescription>
                 {drawerMode === "create"
                   ? "Create a structured audit finding for the selected project."
                   : "Edit finding"}
               </DialogDescription>
-            )}
-          </DialogHeader>
+            </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            {drawerMode === "view" && activeFinding ? (
-              <FindingDetailBody
-                finding={activeFinding}
-                copiedKey={copiedKey}
-                onCopy={copySection}
-                onUpdateStatus={updateStatus}
-                codePreviews={codePreviews}
-                codeLoading={codeLoading}
-              />
-            ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               <FindingForm value={formValue} setValue={setFormValue} />
-            )}
-          </div>
+            </div>
 
-          <div className="flex items-center justify-between gap-3 border-t px-5 py-3">
-            {drawerMode === "view" && activeFinding ? (
-              <>
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => setDrawerMode("edit")}
-                >
-                  <Pencil className="h-4 w-4" />
-                  Edit
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="rounded-full text-red-700 hover:text-red-700"
-                  onClick={removeFinding}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="ghost"
-                  className="rounded-full"
-                  onClick={() => {
-                    if (drawerMode === "edit" && activeFinding) {
-                      setFormValue(findingToPayload(activeFinding));
-                      setDrawerMode("view");
-                    } else {
-                      setDrawerOpen(false);
-                    }
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button className="rounded-full" onClick={saveFinding}>
-                  <FileText className="h-4 w-4" />
-                  Save
-                </Button>
-              </>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+            <div className="flex items-center justify-between gap-3 border-t px-5 py-3">
+              <Button
+                variant="ghost"
+                className="rounded-full"
+                onClick={() => {
+                  if (drawerMode === "edit" && activeFinding) {
+                    setFormValue(findingToPayload(activeFinding));
+                    setDrawerMode("view");
+                  } else {
+                    setDrawerOpen(false);
+                  }
+                }}
+              >
+                Cancel
+              </Button>
+              <Button className="rounded-full" onClick={saveFinding}>
+                <FileText className="h-4 w-4" />
+                Save
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { serve as serveNode } from '@hono/node-server'
 import { Hono } from 'hono'
 
 import {
+  clearFixReview,
   createFinding,
   deleteFinding,
   deleteProject,
@@ -221,6 +222,13 @@ export function createApp(): Hono {
           gitMetadata: getGitMetadata(project.path),
         }),
       )
+    } catch (error) {
+      return errorStatus(error)
+    }
+  })
+  app.delete('/api/projects/:projectId/fix-review', (c) => {
+    try {
+      return c.json(clearFixReview({ projectId: c.req.param('projectId') }))
     } catch (error) {
       return errorStatus(error)
     }

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { serve as serveNode } from '@hono/node-server';
 import { Hono } from 'hono';
-import { createFinding, deleteFinding, deleteProject, getFinding, getProject, listFindings, listProjects, requestFixReview, updateFinding, WardDbError, } from './db.js';
+import { clearFixReview, createFinding, deleteFinding, deleteProject, getFinding, getProject, listFindings, listProjects, requestFixReview, updateFinding, WardDbError, } from './db.js';
 import { getGitMetadata, resolveGitCommit } from './git.js';
 import { codePreviewSchema, findingCreateSchema, findingUpdateSchema, projectFixReviewRequestSchema, } from './schemas.js';
 import { frontendDistDir } from './paths.js';
@@ -191,6 +191,14 @@ export function createApp() {
                 commitHash,
                 gitMetadata: getGitMetadata(project.path),
             }));
+        }
+        catch (error) {
+            return errorStatus(error);
+        }
+    });
+    app.delete('/api/projects/:projectId/fix-review', (c) => {
+        try {
+            return c.json(clearFixReview({ projectId: c.req.param('projectId') }));
         }
         catch (error) {
             return errorStatus(error);

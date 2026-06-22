@@ -292,24 +292,32 @@ export const cli = Cli.create('ward', {
     }),
     outputPolicy: 'agent-only',
     async run(c) {
+      const agentationEndpoint = 'http://127.0.0.1:4747'
       const commands: ManagedCommand[] = [
         { label: 'backend', command: serverCommand(), env: { ...process.env, WARD_HOST: '127.0.0.1', WARD_PORT: '8765' } },
         {
           label: 'app',
           command: ['npm', 'run', 'dev', '--', '--host', '127.0.0.1', '--port', '5173'],
           cwd: frontendDir(),
+          env: c.options.debug
+            ? {
+                ...process.env,
+                VITE_AGENTATION_ENABLED: 'true',
+                VITE_AGENTATION_ENDPOINT: agentationEndpoint,
+              }
+            : process.env,
         },
       ]
       if (c.options.debug) {
         commands.push({
           label: 'agentation mcp',
-          command: ['npm', 'run', 'agentation:mcp'],
+          command: ['npm', 'run', 'agentation:mcp', '--', '--port', '4747'],
           cwd: frontendDir(),
         })
       }
       console.error('[ward] app: http://127.0.0.1:5173')
       console.error('[ward] backend: http://127.0.0.1:8765')
-      if (c.options.debug) console.error('[ward] agentation mcp: http://localhost:4747')
+      if (c.options.debug) console.error(`[ward] agentation mcp: ${agentationEndpoint}`)
       const code = await startCommands(commands)
       process.exitCode = code
       return { exitCode: code }

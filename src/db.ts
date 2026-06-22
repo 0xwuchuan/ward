@@ -498,6 +498,27 @@ export function requestFixReview(options: {
   })
 }
 
+export function clearFixReview(options: { projectId: string; db?: Sqlite }): ProjectOut {
+  return withDb(options.db, (conn) => {
+    const project = getProject(options.projectId, conn)
+    if (!project) throw new WardDbError('project not found')
+
+    conn
+      .prepare(`
+        UPDATE projects
+        SET fix_review_commit_hash = NULL,
+            fix_review_requested_at = NULL,
+            updated_at = ?
+        WHERE id = ?
+      `)
+      .run(nowIso(), project.id)
+
+    const updated = getProject(project.id, conn)
+    if (!updated) throw new WardDbError('project not found')
+    return updated
+  })
+}
+
 export function deleteProject(projectId: string, db?: Sqlite): boolean {
   return withDb(db, (conn) => {
     const result = conn.prepare('DELETE FROM projects WHERE id = ?').run(projectId)
@@ -561,9 +582,14 @@ export function getFinding(findingId: string, db?: Sqlite): FindingOut | null {
   })
 }
 
-function findingsOrderClause(sortBy: FindingSortBy, sortDir: SortDirection): string {
+type FindingSortRule = {
+  sortBy: FindingSortBy
+  sortDir: SortDirection
+}
+
+function findingOrderExpression(sortBy: FindingSortBy, sortDir: SortDirection): string {
   const direction = sortDir.toUpperCase()
-  if (sortBy === 'created_at') return `created_at ${direction}, title ASC`
+  if (sortBy === 'created_at') return `created_at ${direction}`
   if (sortBy === 'severity') {
     return `
       CASE severity
@@ -572,9 +598,7 @@ function findingsOrderClause(sortBy: FindingSortBy, sortDir: SortDirection): str
         WHEN 'medium' THEN 3
         WHEN 'low' THEN 2
         ELSE 1
-      END ${direction},
-      created_at DESC,
-      title ASC
+      END ${direction}
     `.replace(/\n\s+/g, ' ')
   }
   if (sortBy === 'status') {
@@ -584,19 +608,46 @@ function findingsOrderClause(sortBy: FindingSortBy, sortDir: SortDirection): str
         WHEN 'valid' THEN 3
         WHEN 'draft' THEN 2
         ELSE 1
-      END ${direction},
-      created_at DESC,
-      title ASC
+      END ${direction}
     `.replace(/\n\s+/g, ' ')
   }
   return `
     CASE source
       WHEN 'human' THEN 2
       ELSE 1
-    END ${direction},
-    created_at DESC,
-    title ASC
+    END ${direction}
   `.replace(/\n\s+/g, ' ')
+}
+
+function parseSortRules(sortBy: string | null | undefined, sortDir: string | null | undefined): FindingSortRule[] {
+  const sortByValues = (sortBy ?? 'created_at')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+  const sortDirValues = (sortDir ?? 'desc')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+  return sortByValues.map((value, index) => ({
+    sortBy: validateChoice('sort_by', value, findingSortBys),
+    sortDir: validateChoice('sort_dir', sortDirValues[index] ?? sortDirValues[0] ?? 'desc', sortDirections),
+  }))
+}
+
+function findingsOrderClause(sortBy: string | null | undefined, sortDir: string | null | undefined): string {
+  const seen = new Set<FindingSortBy>()
+  const clauses = parseSortRules(sortBy, sortDir)
+    .filter((rule) => {
+      if (seen.has(rule.sortBy)) return false
+      seen.add(rule.sortBy)
+      return true
+    })
+    .map((rule) => findingOrderExpression(rule.sortBy, rule.sortDir))
+
+  if (!seen.has('created_at')) clauses.push('created_at DESC')
+  clauses.push('title ASC')
+  return clauses.join(', ')
 }
 
 export function listFindings(
@@ -638,10 +689,8 @@ export function listFindings(
       params.push(filters.category)
     }
 
-    const sortBy = validateChoice('sort_by', filters.sort_by ?? 'created_at', findingSortBys)
-    const sortDir = validateChoice('sort_dir', filters.sort_dir ?? 'desc', sortDirections)
     const rows = conn
-      .prepare(`SELECT * FROM findings WHERE ${where.join(' AND ')} ORDER BY ${findingsOrderClause(sortBy, sortDir)}`)
+      .prepare(`SELECT * FROM findings WHERE ${where.join(' AND ')} ORDER BY ${findingsOrderClause(filters.sort_by, filters.sort_dir)}`)
       .all(...params) as FindingRow[]
     return rows.map(findingFromRow)
   })

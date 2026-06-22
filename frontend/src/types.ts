@@ -3,6 +3,10 @@ export type Source = "human" | "agent";
 export type Status = "draft" | "valid" | "invalid" | "reported";
 export type FindingSortBy = "created_at" | "severity" | "status" | "source";
 export type SortDirection = "asc" | "desc";
+export type SortRule = {
+  sort_by: FindingSortBy;
+  sort_dir: SortDirection;
+};
 
 export type FileRef = {
   path: string;

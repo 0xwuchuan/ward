@@ -178,6 +178,41 @@ describe('TypeScript persistence', () => {
       { path: 'src/Vault.sol', start_line: 42, end_line: 51 },
     ])
   })
+
+  it('sorts findings by multiple ordered fields', () => {
+    const projectPath = path.join(tmp, 'repo')
+    fs.mkdirSync(projectPath)
+    const project = registerProject({ path: projectPath, name: 'Sorting Project' })
+
+    createFinding({
+      project_id: project.id,
+      title: 'Medium valid',
+      severity: 'medium',
+      status: 'valid',
+      source: 'human',
+    })
+    createFinding({
+      project_id: project.id,
+      title: 'High reported',
+      severity: 'high',
+      status: 'reported',
+      source: 'human',
+    })
+    createFinding({
+      project_id: project.id,
+      title: 'Medium draft',
+      severity: 'medium',
+      status: 'draft',
+      source: 'human',
+    })
+
+    expect(
+      listFindings(project.id, {
+        sort_by: 'severity,status',
+        sort_dir: 'desc,asc',
+      }).map((finding) => finding.title),
+    ).toEqual(['High reported', 'Medium draft', 'Medium valid'])
+  })
 })
 
 describe('incur CLI', () => {
@@ -307,6 +342,15 @@ describe('HTTP API', () => {
     expect(valid.status).toBe(200)
     const updated = await valid.json()
     expect(updated.fix_review_commit_hash).toBe(commitHash)
+
+    const cleared = await app.request(`/api/projects/${project.id}/fix-review`, {
+      method: 'DELETE',
+    })
+    expect(cleared.status).toBe(200)
+    expect(await cleared.json()).toMatchObject({
+      fix_review_commit_hash: null,
+      fix_review_requested_at: null,
+    })
   })
 
   it('marks duplicate relative paths across project roots as ambiguous', async () => {

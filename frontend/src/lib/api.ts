@@ -5,6 +5,7 @@ import type {
   FindingSortBy,
   Project,
   SortDirection,
+  SortRule,
 } from "../types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -49,12 +50,18 @@ export function listFindings(
     category?: string;
     sort_by?: FindingSortBy;
     sort_dir?: SortDirection;
+    sort?: SortRule[];
   },
 ) {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
-    if (value) params.set(key, value);
+    if (!value || key === "sort") return;
+    params.set(key, String(value));
   });
+  if (filters.sort?.length) {
+    params.set("sort_by", filters.sort.map((sort) => sort.sort_by).join(","));
+    params.set("sort_dir", filters.sort.map((sort) => sort.sort_dir).join(","));
+  }
   const query = params.toString();
   return request<Finding[]>(`/api/projects/${projectId}/findings${query ? `?${query}` : ""}`);
 }
@@ -77,6 +84,12 @@ export function requestFixReview(projectId: string, commit_hash?: string) {
   return request<Project>(`/api/projects/${projectId}/fix-review`, {
     method: "POST",
     body: JSON.stringify(commit_hash ? { commit_hash } : {}),
+  });
+}
+
+export function clearFixReview(projectId: string) {
+  return request<Project>(`/api/projects/${projectId}/fix-review`, {
+    method: "DELETE",
   });
 }
 
